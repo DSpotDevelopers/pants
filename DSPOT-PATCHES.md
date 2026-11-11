@@ -13,7 +13,7 @@ committed `.pants.bootstrap`. There's no wrapper script.
 | 2 | JS inference finds the owner of an imported non-module file, such as `./x.css` or `./rows.json` | Branch `dspot/js-infer-non-js-files` on this fork, on Pants main; the issue and PR are posted by a person (Pants requires human-written text) | Drop it when a Pants release we pin contains the upstream fix. |
 | 3 | JS inference reads a bundler query's file: `./App.tsx?raw`, `./logo.svg?url` | Branch `dspot/js-infer-bundler-query` (on patch 2's), posted the same way | Drop it when a Pants release we pin contains the upstream fix. |
 | 4 | A TypeScript `.js` specifier infers the source it compiles from: `./errors.js` -> `errors.ts`/`.tsx`/`.d.ts`, `./View.jsx` -> `View.tsx` | Branch `dspot/js-infer-ts-js-specifier` (on patch 3's), posted the same way | Drop it when a Pants release we pin contains the upstream fix. |
-| 5 | TypeScript check keeps the discovered named/root Node project and a sandbox-relative wrapper path (`9b4d1aed7`, `cfe58a301`) | Coordinator/owner owns external contribution review and submission under the human-written-text rule. | Drop it when a Pants release we pin contains the equivalent named-project/root-wrapper fix. |
+| 5 | TypeScript check keeps the discovered named/root Node project and a sandbox-relative wrapper path (`9b4d1aed7`, `cfe58a301`) | Branch `dspot/ts-check-named-root-project` on this fork, on Pants main (60df85631); the issue and PR are posted by a person, as for patches 2-4 | Drop it when a Pants release we pin contains the equivalent named-project/root-wrapper fix. |
 
 ## Rules for this branch
 
