@@ -11,20 +11,13 @@ from typing import cast
 
 import pytest
 
-from pants.backend.javascript import package_json
-from pants.backend.javascript.subsystems import nodejs_tool
-from pants.backend.javascript.target_types import JSSourcesGeneratorTarget
-from pants.backend.tsx.target_types import TSXSourcesGeneratorTarget, TSXTestsGeneratorTarget
-from pants.backend.typescript.goals import check
 from pants.backend.typescript.goals.check import TypeScriptCheckFieldSet, TypeScriptCheckRequest
-from pants.backend.typescript.target_types import (
-    TypeScriptSourcesGeneratorTarget,
-    TypeScriptTestsGeneratorTarget,
+from pants.backend.typescript.goals.check_test_utils import (
+    _create_rule_runner,
+    _load_project_test_files,
 )
 from pants.build_graph.address import Address
 from pants.core.goals.check import CheckResults
-from pants.core.target_types import FileTarget, ResourceTarget
-from pants.engine.rules import QueryRule
 from pants.testutil.rule_runner import RuleRunner
 
 JS_TYPE_ERROR_FILE_NUMBER_TO_STRING = (
@@ -55,33 +48,6 @@ def pnpm_project_test(request) -> TestProjectAndPackageManager:
 @pytest.fixture(params=[("pnpm_member_dep", "pnpm")])
 def pnpm_member_dep_test(request) -> TestProjectAndPackageManager:
     return cast(TestProjectAndPackageManager, request.param)
-
-
-def _create_rule_runner(package_manager: str) -> RuleRunner:
-    rule_runner = RuleRunner(
-        rules=[
-            *nodejs_tool.rules(),
-            *check.rules(),
-            QueryRule(CheckResults, [TypeScriptCheckRequest]),
-        ],
-        target_types=[
-            package_json.PackageJsonTarget,
-            JSSourcesGeneratorTarget,
-            TypeScriptSourcesGeneratorTarget,
-            TypeScriptTestsGeneratorTarget,
-            TSXSourcesGeneratorTarget,
-            TSXTestsGeneratorTarget,
-            FileTarget,
-            ResourceTarget,
-        ],
-        objects=dict(package_json.build_file_aliases().objects),
-        preserve_tmpdirs=True,
-    )
-    rule_runner.set_options(
-        [f"--nodejs-package-manager={package_manager}"],
-        env_inherit={"PATH"},
-    )
-    return rule_runner
 
 
 @pytest.fixture
@@ -128,18 +94,6 @@ def _parse_typescript_build_status(stdout: str) -> str:
         return "no_verbose_output"
 
 
-def _load_project_test_files(test_project: str) -> dict[str, str]:
-    base_dir = Path(__file__).parent.parent / "test_resources" / test_project
-    files = {}
-
-    for file_path in base_dir.rglob("*"):
-        if file_path.is_file():
-            relative_path = file_path.relative_to(base_dir)
-            files[f"{test_project}/{relative_path}"] = file_path.read_text()
-
-    return files
-
-
 def _override_index_ts_with_TS2345_error() -> str:
     return textwrap.dedent("""\
         import { add } from './math';
@@ -181,48 +135,6 @@ def test_typescript_check_with_named_package_target(project_root: str, type_erro
     assert results.results[0].exit_code == (1 if type_error else 0)
     if type_error:
         assert "TS2322" in results.results[0].stdout
-
-
-@pytest.mark.parametrize("named_config", [False, True])
-@pytest.mark.parametrize("selection", ["clean", "broken", "dependency"])
-def test_check_selects_tsconfig_program_without_unrelated_sibling(
-    named_config: bool, selection: str
-) -> None:
-    rule_runner = _create_rule_runner("pnpm")
-    files = _load_project_test_files("basic_project")
-    compiler_options = json.loads(files["basic_project/tsconfig.json"])["compilerOptions"]
-    compiler_options["composite"] = True
-    compiler_options["rootDir"] = "../src" if named_config else "."
-    selected_config = "configs/tsconfig.workflow-tests.json" if named_config else "src/tsconfig.json"
-    files["basic_project/tsconfig.json"] = json.dumps(
-        {"files": [], "references": [{"path": selected_config}, {"path": "other"}],
-         "compilerOptions": {"outDir": "./dist"}}
-    )
-    selected = {"compilerOptions": compiler_options,
-                "include": ["../src/**/*.ts" if named_config else "*.ts"]}
-    if selection == "dependency":
-        selected["references"] = [{"path": "../other"}]
-    files["basic_project/" + selected_config] = json.dumps(selected)
-    files["basic_project/other/tsconfig.json"] = json.dumps(
-        {"compilerOptions": {**compiler_options, "rootDir": "."}, "include": ["*.ts"]}
-    )
-    files["basic_project/other/BUILD"] = "typescript_sources(name='ts_sources')\n"
-    files["basic_project/other/broken.ts"] = "export const broken: string = 42;\n"
-    rule_runner.write_files(files)
-    directory, filename = ("other", "broken.ts") if selection == "broken" else ("src", "index.ts")
-    target = rule_runner.get_target(
-        Address("basic_project/" + directory, target_name="ts_sources", relative_file_path=filename)
-    )
-    results = rule_runner.request(
-        CheckResults, [TypeScriptCheckRequest([TypeScriptCheckFieldSet.create(target)])]
-    )
-    assert len(results.results) == 1
-    result = results.results[0]
-    if selection == "clean":
-        assert result.exit_code == 0, result.stdout + result.stderr
-    else:
-        assert result.exit_code != 0
-        assert "TS2322" in result.stdout + result.stderr
 
 
 def test_typescript_check_success(

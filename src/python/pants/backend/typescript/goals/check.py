@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 from dataclasses import dataclass, replace
@@ -354,9 +355,6 @@ async def _prepare_compilation_input(
     config_files = await _collect_config_files_for_project(
         project, project_targets, project_package_jsons, project_ts_configs
     )
-    for ts_config in project_ts_configs:
-        ts_config.validate_outdir()
-
     config_digest = (
         await path_globs_to_digest(
             PathGlobs(config_files, glob_match_error_behavior=GlobMatchErrorBehavior.ignore),
@@ -369,6 +367,88 @@ async def _prepare_compilation_input(
     return await merge_digests(MergeDigests([all_workspace_sources, config_digest]))
 
 
+async def _select_tsconfig_programs(
+    project: NodeJSProject,
+    subsystem: TypeScriptSubsystem,
+    input_digest: Digest,
+    project_ts_configs: list[TSConfig],
+    selected_files: tuple[str, ...],
+    global_options: GlobalOptions,
+) -> tuple[tuple[str, ...], CheckResult | None]:
+    # A Node resolve supplies dependencies, not a TypeScript compilation boundary. Start
+    # with each selected source's nearest default config, then let TypeScript identify the
+    # programs in that solution. --showConfig applies its files/include/exclude/extends
+    # semantics, including named referenced configs whose sources live in other directories.
+    configs = {config.path: config for config in project_ts_configs}
+    defaults = sorted(
+        (
+            config
+            for config in project_ts_configs
+            if os.path.basename(config.path) == "tsconfig.json"
+        ),
+        key=lambda config: len(os.path.dirname(config.path)),
+        reverse=True,
+    )
+    pending = list(
+        dict.fromkeys(
+            next(
+                (
+                    config.path
+                    for config in defaults
+                    if Path(source).is_relative_to(os.path.dirname(config.path))
+                ),
+                os.path.join(project.root_dir, "tsconfig.json"),
+            )
+            for source in selected_files
+        )
+    )
+    visited: set[str] = set()
+    selected: OrderedSet[str] = OrderedSet()
+    source_paths = set(selected_files)
+    while pending:
+        path = pending.pop(0)
+        if path in visited:
+            continue
+        visited.add(path)
+        relative_path = os.path.relpath(path, project.root_dir or ".")
+        request = subsystem.request(
+            args=("--showConfig", "--project", relative_path),
+            input_digest=input_digest,
+            description=f"Discover TypeScript program in {path}",
+            level=LogLevel.DEBUG,
+        )
+        process = await prepare_tool_process(
+            replace(request, resolve=ChosenNodeResolve(project).resolve_name), **implicitly()
+        )
+        result = await execute_process(
+            replace(process, working_directory=project.root_dir), **implicitly()
+        )
+        if result.exit_code:
+            return (), CheckResult.from_fallible_process_result(
+                result,
+                partition_description=f"TypeScript configuration {path}",
+                output_simplifier=global_options.output_simplifier(),
+            )
+        program = json.loads(result.stdout)
+        directory = os.path.dirname(path)
+        files = {
+            os.path.normpath(os.path.join(directory, file)) for file in program.get("files", ())
+        }
+        if source_paths.intersection(files):
+            config = configs.get(path) or TSConfig(
+                path, out_dir=program.get("compilerOptions", {}).get("outDir")
+            )
+            config.validate_outdir()
+            selected.add(relative_path)
+        for reference in program.get("references", ()):
+            referenced = os.path.normpath(os.path.join(directory, reference["path"]))
+            if not referenced.endswith(".json"):
+                referenced = os.path.join(referenced, "tsconfig.json")
+            if referenced not in visited:
+                pending.append(referenced)
+    return tuple(selected), None
+
+
 async def _prepare_tsc_build_process(
     project: NodeJSProject,
     subsystem: TypeScriptSubsystem,
@@ -376,8 +456,9 @@ async def _prepare_tsc_build_process(
     package_output_dirs: tuple[str, ...],
     project_targets: list[Target],
     build_root: BuildRoot,
+    config_paths: tuple[str, ...],
 ) -> Process:
-    tsc_args = ("--build", *subsystem.extra_build_args)
+    tsc_args = ("--build", *config_paths, *subsystem.extra_build_args)
     tsc_wrapper_filename = "__tsc_wrapper.sh"
     named_cache_local_dir = "typescript_cache"
     named_cache_sandbox_mount_dir = "._tsc_cache"
@@ -400,7 +481,7 @@ async def _prepare_tsc_build_process(
     tool_request = subsystem.request(
         args=tsc_args,
         input_digest=tool_input,
-        description=f"Type-check TypeScript project {project.root_dir} ({len(project_targets)} targets)",
+        description=f"Type-check TypeScript programs {config_paths} ({len(project_targets)} selected targets)",
         level=LogLevel.DEBUG,
         project_caches=FrozenDict({named_cache_local_dir: named_cache_sandbox_mount_dir}),
     )
@@ -432,6 +513,7 @@ async def _typecheck_single_project(
     all_package_jsons: AllPackageJson,
     all_ts_configs: AllTSConfigs,
     build_root: BuildRoot,
+    field_sets: tuple[TypeScriptCheckFieldSet, ...],
 ) -> CheckResult:
     project_package_jsons, project_ts_configs = _collect_project_configs(
         project, all_package_jsons, all_ts_configs
@@ -466,13 +548,36 @@ async def _typecheck_single_project(
         project, project_ts_configs, Path(project.root_dir)
     )
 
+    config_paths, selection_error = await _select_tsconfig_programs(
+        project,
+        subsystem,
+        input_digest,
+        project_ts_configs,
+        tuple(field_set.sources.file_path for field_set in field_sets),
+        global_options,
+    )
+    if selection_error:
+        return selection_error
+    if not config_paths:
+        return CheckResult(
+            exit_code=0,
+            stdout="",
+            stderr="",
+            partition_description=f"TypeScript check on {project.root_dir} (no selected source in a TypeScript program)",
+        )
+    selected_addresses = {field_set.address for field_set in field_sets}
+    selected_targets = [
+        target for target in project_targets if target.address in selected_addresses
+    ]
+
     process = await _prepare_tsc_build_process(
         project,
         subsystem,
         input_digest,
         package_output_dirs,
-        project_targets,
+        selected_targets,
         build_root,
+        config_paths,
     )
 
     process = replace(process, cache_scope=check_subsystem.default_process_cache_scope)
@@ -481,7 +586,7 @@ async def _typecheck_single_project(
 
     return CheckResult.from_fallible_process_result(
         result,
-        partition_description=f"TypeScript check on {project.root_dir} ({len(project_targets)} targets)",
+        partition_description=f"TypeScript check on {config_paths} ({len(selected_targets)} selected targets)",
         output_simplifier=global_options.output_simplifier(),
     )
 
@@ -515,13 +620,13 @@ async def typecheck_typescript(
         ),
     )
 
-    projects: OrderedSet[NodeJSProject] = OrderedSet()
-    for owning_package in owning_packages:
+    projects: dict[NodeJSProject, list[TypeScriptCheckFieldSet]] = {}
+    for field_set, owning_package in zip(field_sets, owning_packages):
         if owning_package.target:
             package_directory = owning_package.target.address.spec_path
             owning_project = all_projects.project_for_directory(package_directory)
             if owning_project:
-                projects.add(owning_project)
+                projects.setdefault(owning_project, []).append(field_set)
 
     project_results = await concurrently(
         _typecheck_single_project(
@@ -534,8 +639,9 @@ async def typecheck_typescript(
             all_package_jsons,
             all_ts_configs,
             build_root,
+            tuple(project_field_sets),
         )
-        for project in projects
+        for project, project_field_sets in projects.items()
     )
 
     return CheckResults(project_results, checker_name=request.tool_name, output_per_partition=False)

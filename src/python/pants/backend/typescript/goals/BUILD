@@ -6,5 +6,8 @@ python_tests(
     timeout=180,
     overrides={
         "check_test.py": {"dependencies": ["//src/python/pants/backend/typescript:test_resources"]},
+        "check_selection_test.py": {
+            "dependencies": ["//src/python/pants/backend/typescript:test_resources"]
+        },
     },
 )
