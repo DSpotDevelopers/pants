@@ -389,6 +389,58 @@ def test_an_imported_non_js_file_no_target_owns_is_still_unowned(rule_runner: Ru
         )
 
 
+def test_a_bundler_query_names_the_file_before_it(rule_runner: RuleRunner) -> None:
+    rule_runner.write_files(
+        {
+            "src/js/BUILD": dedent(
+                """\
+                javascript_sources()
+                tsx_sources(name="tsx")
+                resources(name="assets", sources=["*.svg"])
+                """
+            ),
+            "src/js/index.js": dedent(
+                """\
+                import source from "./App.tsx?raw";
+                import logo from "./logo.svg?url";
+                """
+            ),
+            "src/js/App.tsx": "",
+            "src/js/logo.svg": "",
+        }
+    )
+
+    index_tgt = rule_runner.get_target(Address("src/js", relative_file_path="index.js"))
+    addresses = rule_runner.request(
+        InferredDependencies,
+        [InferJSDependenciesRequest(JSSourceInferenceFieldSet.create(index_tgt))],
+    ).include
+
+    assert set(addresses) == {
+        Address("src/js", target_name="tsx", relative_file_path="App.tsx"),
+        Address("src/js", target_name="assets", relative_file_path="logo.svg"),
+    }
+
+
+def test_an_unowned_import_with_a_bundler_query_is_reported_as_written(
+    rule_runner: RuleRunner,
+) -> None:
+    rule_runner.set_options(["--nodejs-infer-unowned-dependency-behavior=error"])
+    rule_runner.write_files(
+        {
+            "src/js/BUILD": "javascript_sources()",
+            "src/js/index.js": 'import styles from "./missing.css?inline";',
+        }
+    )
+
+    index_tgt = rule_runner.get_target(Address("src/js", relative_file_path="index.js"))
+    with engine_error(UnownedDependencyError, contains="./missing.css?inline"):
+        rule_runner.request(
+            InferredDependencies,
+            [InferJSDependenciesRequest(JSSourceInferenceFieldSet.create(index_tgt))],
+        )
+
+
 def test_infers_js_dependencies_with_compiled_typescript_modules(rule_runner: RuleRunner) -> None:
     rule_runner.write_files(
         {

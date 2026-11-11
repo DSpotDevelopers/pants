@@ -165,16 +165,18 @@ async def _prepare_inference_metadata(address: Address, file_path: str) -> Infer
 def _add_extensions(file_imports: frozenset[str], file_extensions: tuple[str, ...]) -> PathGlobs:
     extensions = file_extensions + tuple(f"/index{ext}" for ext in file_extensions)
     valid_file_extensions = set(file_extensions)
+    # A bundler's query (`./App.tsx?raw`, `./logo.svg?url`) names the file before the `?`.
+    file_paths = {file_import.partition("?")[0] for file_import in file_imports}
     return PathGlobs(
         string
-        for file_import in file_imports
+        for file_path in file_paths
         for string in (
-            [file_import]
-            if PurePath(file_import).suffix in valid_file_extensions
+            [file_path]
+            if PurePath(file_path).suffix in valid_file_extensions
             # Any other import may name a file that is not a module (a stylesheet, a JSON
             # document), so the exact path is a candidate too. The extension-completed candidates
             # stay for a module path whose name contains a dot (`./moduleA.generated`).
-            else [file_import, *(f"{file_import}{ext}" for ext in extensions)]
+            else [file_path, *(f"{file_path}{ext}" for ext in extensions)]
         )
     )
 
