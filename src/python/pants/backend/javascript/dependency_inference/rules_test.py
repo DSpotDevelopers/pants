@@ -441,6 +441,59 @@ def test_an_unowned_import_with_a_bundler_query_is_reported_as_written(
         )
 
 
+def test_a_js_specifier_resolves_to_the_typescript_source_it_compiles_from(
+    rule_runner: RuleRunner,
+) -> None:
+    rule_runner.write_files(
+        {
+            "src/ts/BUILD": dedent(
+                """\
+                typescript_sources()
+                tsx_sources(name="tsx")
+                """
+            ),
+            "src/ts/index.ts": dedent(
+                """\
+                import { errors } from "./errors.js";
+                import { View } from "./View.jsx";
+                """
+            ),
+            "src/ts/errors.ts": "",
+            "src/ts/View.tsx": "",
+        }
+    )
+
+    index_tgt = rule_runner.get_target(Address("src/ts", relative_file_path="index.ts"))
+    addresses = rule_runner.request(
+        InferredDependencies,
+        [InferJSDependenciesRequest(JSSourceInferenceFieldSet.create(index_tgt))],
+    ).include
+
+    assert set(addresses) == {
+        Address("src/ts", relative_file_path="errors.ts"),
+        Address("src/ts", target_name="tsx", relative_file_path="View.tsx"),
+    }
+
+
+def test_a_js_specifier_with_no_js_or_typescript_file_is_still_unowned(
+    rule_runner: RuleRunner,
+) -> None:
+    rule_runner.set_options(["--nodejs-infer-unowned-dependency-behavior=error"])
+    rule_runner.write_files(
+        {
+            "src/ts/BUILD": "typescript_sources()",
+            "src/ts/index.ts": 'import { errors } from "./errors.js";',
+        }
+    )
+
+    index_tgt = rule_runner.get_target(Address("src/ts", relative_file_path="index.ts"))
+    with engine_error(UnownedDependencyError, contains="./errors.js"):
+        rule_runner.request(
+            InferredDependencies,
+            [InferJSDependenciesRequest(JSSourceInferenceFieldSet.create(index_tgt))],
+        )
+
+
 def test_infers_js_dependencies_with_compiled_typescript_modules(rule_runner: RuleRunner) -> None:
     rule_runner.write_files(
         {
