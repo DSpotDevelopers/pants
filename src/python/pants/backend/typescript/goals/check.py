@@ -21,9 +21,13 @@ from pants.backend.javascript.package_json import (
 )
 from pants.backend.javascript.resolve import ChosenNodeResolve
 from pants.backend.javascript.subsystems.nodejs_tool import NodeJSToolRequest, prepare_tool_process
-from pants.backend.javascript.target_types import JSRuntimeSourceField
+from pants.backend.javascript.target_types import JS_FILE_EXTENSIONS, JSRuntimeSourceField
 from pants.backend.typescript.subsystem import TypeScriptSubsystem
-from pants.backend.typescript.target_types import TypeScriptSourceField, TypeScriptTestSourceField
+from pants.backend.typescript.target_types import (
+    TS_FILE_EXTENSIONS,
+    TypeScriptSourceField,
+    TypeScriptTestSourceField,
+)
 from pants.backend.typescript.tsconfig import AllTSConfigs, TSConfig, construct_effective_ts_configs
 from pants.base.build_root import BuildRoot
 from pants.core.goals.check import CheckRequest, CheckResult, CheckResults, CheckSubsystem
@@ -42,6 +46,7 @@ from pants.engine.internals.native_engine import MergeDigests
 from pants.engine.internals.selectors import concurrently
 from pants.engine.intrinsics import (
     create_digest,
+    digest_to_snapshot,
     execute_process,
     merge_digests,
     path_globs_to_digest,
@@ -294,12 +299,17 @@ async def _collect_project_targets(
 ) -> list[Target]:
     # checkJs controls diagnostics, not whether JS modules are compiler inputs. TypeScript
     # still follows imports into JS with allowJs, and declarations can sit beside those modules.
+    compiler_extensions = TS_FILE_EXTENSIONS + JS_FILE_EXTENSIONS + (".tsx", ".jsx", ".json")
     targets = [
         target
         for target in all_targets
         if target.has_field(JSRuntimeSourceField)
         or include_assets
-        and (target.has_field(FileSourceField) or target.has_field(ResourceSourceField))
+        and any(
+            target.has_field(field_type)
+            and target[field_type].file_path.endswith(compiler_extensions)
+            for field_type in (FileSourceField, ResourceSourceField)
+        )
     ]
 
     target_owning_packages = await concurrently(
@@ -367,18 +377,24 @@ async def _prepare_compilation_input(
     return await merge_digests(MergeDigests([all_workspace_sources, config_digest]))
 
 
+@dataclass(frozen=True)
+class TypeScriptPrograms:
+    config_paths: tuple[str, ...]
+    source_files: frozenset[str]
+    config_files: tuple[str, ...]
+
+
 async def _select_tsconfig_programs(
     project: NodeJSProject,
     subsystem: TypeScriptSubsystem,
     input_digest: Digest,
     project_ts_configs: list[TSConfig],
     selected_files: tuple[str, ...],
+    asset_paths: tuple[str, ...],
     global_options: GlobalOptions,
-) -> tuple[tuple[str, ...], CheckResult | None]:
-    # A Node resolve supplies dependencies, not a TypeScript compilation boundary. Start
-    # with each selected source's nearest default config, then let TypeScript identify the
-    # programs in that solution. --showConfig applies its files/include/exclude/extends
-    # semantics, including named referenced configs whose sources live in other directories.
+) -> TypeScriptPrograms | CheckResult:
+    # A Node resolve supplies dependencies, not a TypeScript compilation boundary.
+    # TypeScript owns files/include/exclude/extends semantics and named project references.
     configs = {config.path: config for config in project_ts_configs}
     defaults = sorted(
         (
@@ -402,29 +418,47 @@ async def _select_tsconfig_programs(
             for source in selected_files
         )
     )
-    visited: set[str] = set()
+    program_files: dict[str, set[str]] = {}
+    references: dict[str, tuple[str, ...]] = {}
     selected: OrderedSet[str] = OrderedSet()
     source_paths = set(selected_files)
     while pending:
         path = pending.pop(0)
-        if path in visited:
+        if path in program_files:
             continue
-        visited.add(path)
         relative_path = os.path.relpath(path, project.root_dir or ".")
+        # Explicit references can name configurations beyond the tsconfig*.json glob.
+        config_digest = await path_globs_to_digest(
+            PathGlobs([path], glob_match_error_behavior=GlobMatchErrorBehavior.ignore),
+            **implicitly(),
+        )
+        query_input = await merge_digests(MergeDigests([input_digest, config_digest]))
         request = subsystem.request(
             args=("--showConfig", "--project", relative_path),
-            input_digest=input_digest,
+            input_digest=query_input,
             description=f"Discover TypeScript program in {path}",
             level=LogLevel.DEBUG,
         )
         process = await prepare_tool_process(
             replace(request, resolve=ChosenNodeResolve(project).resolve_name), **implicitly()
         )
+        # --showConfig enumerates filenames; it does not parse source contents. Supply
+        # empty candidate files for this discovery only, without hydrating their blobs.
+        # Installed dependency/config contents remain authoritative and are never replaced.
+        existing = await digest_to_snapshot(process.input_digest)
+        existing_files = set(existing.files)
+        inventory = await create_digest(
+            CreateDigest(
+                [FileContent(asset, b"") for asset in asset_paths if asset not in existing_files]
+            )
+        )
+        discovery_input = await merge_digests(MergeDigests([process.input_digest, inventory]))
         result = await execute_process(
-            replace(process, working_directory=project.root_dir), **implicitly()
+            replace(process, input_digest=discovery_input, working_directory=project.root_dir),
+            **implicitly(),
         )
         if result.exit_code:
-            return (), CheckResult.from_fallible_process_result(
+            return CheckResult.from_fallible_process_result(
                 result,
                 partition_description=f"TypeScript configuration {path}",
                 output_simplifier=global_options.output_simplifier(),
@@ -434,19 +468,35 @@ async def _select_tsconfig_programs(
         files = {
             os.path.normpath(os.path.join(directory, file)) for file in program.get("files", ())
         }
+        program_files[path] = files
         if source_paths.intersection(files):
             config = configs.get(path) or TSConfig(
                 path, out_dir=program.get("compilerOptions", {}).get("outDir")
             )
             config.validate_outdir()
-            selected.add(relative_path)
+            selected.add(path)
+        child_configs = []
         for reference in program.get("references", ()):
             referenced = os.path.normpath(os.path.join(directory, reference["path"]))
             if not referenced.endswith(".json"):
                 referenced = os.path.join(referenced, "tsconfig.json")
-            if referenced not in visited:
-                pending.append(referenced)
-    return tuple(selected), None
+            child_configs.append(referenced)
+        references[path] = tuple(child_configs)
+        pending.extend(child_configs)
+
+    # Only selected programs and their declared reference closure contribute ambient assets.
+    active: OrderedSet[str] = OrderedSet()
+    pending = list(selected)
+    while pending:
+        path = pending.pop(0)
+        if path not in active:
+            active.add(path)
+            pending.extend(references[path])
+    return TypeScriptPrograms(
+        tuple(os.path.relpath(path, project.root_dir or ".") for path in selected),
+        frozenset(file for path in active for file in program_files[path]),
+        tuple(active),
+    )
 
 
 async def _prepare_tsc_build_process(
@@ -531,15 +581,12 @@ async def _typecheck_single_project(
             partition_description=f"TypeScript check on {project.root_dir} (no targets)",
         )
 
-    # tsconfig can include inputs without an import edge, notably ambient .d.ts files.
-    # Stage the project's declared files/resources too; the compiler chooses its program.
-    project_inputs = await _collect_project_targets(
-        project, all_targets, all_projects, project_ts_configs, include_assets=True
-    )
-    all_workspace_sources = await _hydrate_project_sources(project_inputs)
+    # Imported assets come from the inferred dependency closure. Unimported declarations
+    # are discovered by their filenames below, then hydrated only for active programs.
+    all_workspace_sources = await _hydrate_project_sources(project_targets)
     input_digest = await _prepare_compilation_input(
         project,
-        project_inputs,
+        project_targets,
         project_package_jsons,
         project_ts_configs,
         all_workspace_sources,
@@ -548,23 +595,42 @@ async def _typecheck_single_project(
         project, project_ts_configs, Path(project.root_dir)
     )
 
-    config_paths, selection_error = await _select_tsconfig_programs(
+    candidates = await _collect_project_targets(
+        project, all_targets, all_projects, project_ts_configs, include_assets=True
+    )
+    assets = {
+        target[field_type].file_path: target
+        for target in candidates
+        for field_type in (FileSourceField, ResourceSourceField)
+        if target.has_field(field_type)
+    }
+    selection = await _select_tsconfig_programs(
         project,
         subsystem,
         input_digest,
         project_ts_configs,
         tuple(field_set.sources.file_path for field_set in field_sets),
+        tuple(assets),
         global_options,
     )
-    if selection_error:
-        return selection_error
-    if not config_paths:
+    if isinstance(selection, CheckResult):
+        return selection
+    if not selection.config_paths:
         return CheckResult(
             exit_code=0,
             stdout="",
             stderr="",
             partition_description=f"TypeScript check on {project.root_dir} (no selected source in a TypeScript program)",
         )
+    actual_assets = await _hydrate_project_sources(
+        [target for path, target in assets.items() if path in selection.source_files]
+    )
+    selected_configs = await path_globs_to_digest(PathGlobs(selection.config_files), **implicitly())
+    # The compile gets actual contents only. Discovery's empty inventory never reaches tsc --build.
+    input_digest = await merge_digests(
+        MergeDigests([input_digest, actual_assets, selected_configs])
+    )
+    config_paths = selection.config_paths
     selected_addresses = {field_set.address for field_set in field_sets}
     selected_targets = [
         target for target in project_targets if target.address in selected_addresses

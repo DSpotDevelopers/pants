@@ -20,6 +20,9 @@ from pants.core.target_types import FileTarget, ResourceTarget
 from pants.engine.rules import QueryRule
 from pants.testutil.rule_runner import RuleRunner
 
+TestProjectAndPackageManager = tuple[str, str]
+RuleRunnerWithProjectAndPackageManager = tuple[RuleRunner, str, str]
+
 
 def _create_rule_runner(package_manager: str) -> RuleRunner:
     rule_runner = RuleRunner(
@@ -39,7 +42,6 @@ def _create_rule_runner(package_manager: str) -> RuleRunner:
             ResourceTarget,
         ],
         objects=dict(package_json.build_file_aliases().objects),
-        preserve_tmpdirs=True,
     )
     rule_runner.set_options(
         [f"--nodejs-package-manager={package_manager}"],
