@@ -26,7 +26,7 @@ from pants.backend.typescript.target_types import TypeScriptSourceField, TypeScr
 from pants.backend.typescript.tsconfig import AllTSConfigs, TSConfig, construct_effective_ts_configs
 from pants.base.build_root import BuildRoot
 from pants.core.goals.check import CheckRequest, CheckResult, CheckResults, CheckSubsystem
-from pants.core.target_types import FileSourceField
+from pants.core.target_types import FileSourceField, ResourceSourceField
 from pants.core.util_rules.system_binaries import CpBinary, FindBinary, MkdirBinary, TouchBinary
 from pants.engine.fs import (
     EMPTY_DIGEST,
@@ -51,6 +51,7 @@ from pants.engine.target import (
     AllTargets,
     FieldSet,
     HydrateSourcesRequest,
+    SourcesField,
     Target,
     TransitiveTargetsRequest,
 )
@@ -161,7 +162,7 @@ async def _collect_config_files_for_project(
     for ts_config in project_ts_configs:
         config_files.append(ts_config.path)
 
-    # Add file() targets that are dependencies of JS/TS targets
+    # The compiler reads imported assets as well as runtime sources (for example JSON schemas).
     # Note: Package manager config files
     # (.npmrc, .pnpmrc, pnpm-workspace.yaml) should be dependencies of package_json targets
     # since they affect package installation, not TypeScript compilation directly.
@@ -171,10 +172,9 @@ async def _collect_config_files_for_project(
     )
 
     for target in transitive_targets_result.closure:
-        if target.has_field(FileSourceField):
-            file_path = target[FileSourceField].file_path
-            if file_path.startswith(project.root_dir):
-                config_files.append(file_path)
+        for field_type in (FileSourceField, ResourceSourceField):
+            if target.has_field(field_type):
+                config_files.append(target[field_type].file_path)
 
     return config_files
 
@@ -288,22 +288,18 @@ async def _collect_project_targets(
     all_targets: AllTargets,
     all_projects: AllNodeJSProjects,
     project_ts_configs: list[TSConfig],
+    *,
+    include_assets: bool = False,
 ) -> list[Target]:
-    has_check_js = any(
-        ts_config.allow_js and ts_config.check_js for ts_config in project_ts_configs
-    )
-
-    if has_check_js:
-        targets = [target for target in all_targets if target.has_field(JSRuntimeSourceField)]
-    else:
-        targets = [
-            target
-            for target in all_targets
-            if (
-                target.has_field(TypeScriptSourceField)
-                or target.has_field(TypeScriptTestSourceField)
-            )
-        ]
+    # checkJs controls diagnostics, not whether JS modules are compiler inputs. TypeScript
+    # still follows imports into JS with allowJs, and declarations can sit beside those modules.
+    targets = [
+        target
+        for target in all_targets
+        if target.has_field(JSRuntimeSourceField)
+        or include_assets
+        and (target.has_field(FileSourceField) or target.has_field(ResourceSourceField))
+    ]
 
     target_owning_packages = await concurrently(
         find_owning_package(OwningNodePackageRequest(target.address), **implicitly())
@@ -318,6 +314,17 @@ async def _collect_project_targets(
             if target_project == project:
                 project_targets.append(target)
 
+    has_check_js = any(config.allow_js and config.check_js for config in project_ts_configs)
+    if (
+        not include_assets
+        and not has_check_js
+        and not any(
+            target.has_field(TypeScriptSourceField) or target.has_field(TypeScriptTestSourceField)
+            for target in project_targets
+        )
+    ):
+        return []
+
     return project_targets
 
 
@@ -326,7 +333,7 @@ async def _hydrate_project_sources(
 ) -> Digest:
     workspace_target_sources = await concurrently(
         hydrate_sources(
-            HydrateSourcesRequest(target[JSRuntimeSourceField]),
+            HydrateSourcesRequest(target[SourcesField]),
             **implicitly(),
         )
         for target in project_targets
@@ -442,10 +449,15 @@ async def _typecheck_single_project(
             partition_description=f"TypeScript check on {project.root_dir} (no targets)",
         )
 
-    all_workspace_sources = await _hydrate_project_sources(project_targets)
+    # tsconfig can include inputs without an import edge, notably ambient .d.ts files.
+    # Stage the project's declared files/resources too; the compiler chooses its program.
+    project_inputs = await _collect_project_targets(
+        project, all_targets, all_projects, project_ts_configs, include_assets=True
+    )
+    all_workspace_sources = await _hydrate_project_sources(project_inputs)
     input_digest = await _prepare_compilation_input(
         project,
-        project_targets,
+        project_inputs,
         project_package_jsons,
         project_ts_configs,
         all_workspace_sources,

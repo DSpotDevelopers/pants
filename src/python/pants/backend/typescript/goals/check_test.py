@@ -659,21 +659,31 @@ def test_check_javascript_disabled_via_tsconfig(
     assert "error.js" not in results.results[0].stdout
 
 
-@pytest.mark.parametrize("module_kind", ["javascript", "resource", "declaration"])
+@pytest.mark.parametrize("module_kind", ["javascript", "resource", "declaration", "ambient"])
 def test_compiler_receives_imported_inputs(module_kind: str) -> None:
     rule_runner = _create_rule_runner("pnpm")
     files = _load_project_test_files("basic_project")
     config = json.loads(files["basic_project/tsconfig.json"])
     config["compilerOptions"].update(allowJs=True, checkJs=False, resolveJsonModule=True)
     files["basic_project/tsconfig.json"] = json.dumps(config)
-    if module_kind == "resource":
+    if module_kind == "ambient":
+        files["basic_project/src/index.ts"] = (
+            "import {answer} from 'virtual:answer';\nexport const result: number = answer;\n"
+        )
+        files["basic_project/src/virtual.d.ts"] = (
+            "declare module 'virtual:answer' {export const answer: number;}\n"
+        )
+        files["basic_project/src/BUILD"] += '\nfile(name="types", source="virtual.d.ts")\n'
+    elif module_kind == "resource":
+        # Composite projects require JSON inputs to be named explicitly in include, even
+        # when another include pattern already covers their containing directory.
+        config["include"].append("src/**/*.json")
+        files["basic_project/tsconfig.json"] = json.dumps(config)
         files["basic_project/src/index.ts"] = (
             "import data from './values.json';\nexport const answer: number = data.answer;\n"
         )
         files["basic_project/src/values.json"] = '{"answer": 42}'
-        files["basic_project/src/BUILD"] += (
-            '\nresource(name="values", source="values.json")\n'
-        )
+        files["basic_project/src/BUILD"] += '\nresource(name="values", source="values.json")\n'
     else:
         files["basic_project/src/index.ts"] = (
             "import {answer} from './values.mjs';\nexport const result: number = answer;\n"
@@ -684,9 +694,7 @@ def test_compiler_receives_imported_inputs(module_kind: str) -> None:
             # A declaration beside a JS module participates even when checkJs is false.
             files["basic_project/src/values.mjs"] = "export const answer = 'runtime';\n"
             files["basic_project/src/values.d.mts"] = "export declare const answer: number;\n"
-            files["basic_project/src/BUILD"] += (
-                '\nfile(name="types", source="values.d.mts")\n'
-            )
+            files["basic_project/src/BUILD"] += '\nfile(name="types", source="values.d.mts")\n'
     rule_runner.write_files(files)
     target = rule_runner.get_target(
         Address("basic_project/src", target_name="ts_sources", relative_file_path="index.ts")
@@ -697,6 +705,23 @@ def test_compiler_receives_imported_inputs(module_kind: str) -> None:
     assert len(results.results) == 1
     result = results.results[0]
     assert result.exit_code == 0, result.stdout + result.stderr
+
+
+def test_javascript_only_project_does_not_require_a_typescript_compiler() -> None:
+    rule_runner = _create_rule_runner("pnpm")
+    rule_runner.write_files(
+        {
+            "BUILD": "package_json(name='workspace')\njavascript_sources(name='js')\n",
+            "package.json": '{"name":"javascript-only","private":true}',
+            "index.js": "export const answer = 42;\n",
+        }
+    )
+    target = rule_runner.get_target(Address("", target_name="js", relative_file_path="index.js"))
+    results = rule_runner.request(
+        CheckResults, [TypeScriptCheckRequest([TypeScriptCheckFieldSet.create(target)])]
+    )
+    assert len(results.results) == 1
+    assert results.results[0].exit_code == 0
 
 
 def test_typescript_check_resolves_member_only_deps(

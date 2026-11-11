@@ -14,6 +14,7 @@ committed `.pants.bootstrap`. There's no wrapper script.
 | 3 | JS inference reads a bundler query's file: `./App.tsx?raw`, `./logo.svg?url` | Branch `dspot/js-infer-bundler-query` (on patch 2's), posted the same way | Drop it when a Pants release we pin contains the upstream fix. |
 | 4 | A TypeScript `.js` specifier infers the source it compiles from: `./errors.js` -> `errors.ts`/`.tsx`/`.d.ts`, `./View.jsx` -> `View.tsx` | Branch `dspot/js-infer-ts-js-specifier` (on patch 3's), posted the same way | Drop it when a Pants release we pin contains the upstream fix. |
 | 5 | TypeScript check keeps the discovered named/root Node project and a sandbox-relative wrapper path (`9b4d1aed7`, `cfe58a301`) | Branch `dspot/ts-check-named-root-project` on this fork, on Pants main (60df85631); the issue and PR are posted by a person, as for patches 2-4 | Drop it when a Pants release we pin contains the equivalent named-project/root-wrapper fix. |
+| 6 (next build) | Preserve TypeScript compiler inputs: imported JavaScript, exported declarations, JSON resources and module-specific declarations | Internal branch `codex-r/typescript-input-closure`; coordinator/owner owns external review and submission | Drop it when a Pants release we pin contains equivalent compiler-input and export-inference fixes. |
 
 ## Rules for this branch
 

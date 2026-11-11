@@ -32,6 +32,21 @@ def rule_runner() -> RuleRunner:
     [
         pytest.param(
             {
+                "src/unowned/module.mts": "",
+                "src/unowned/module.cts": "",
+                "src/unowned/module.d.mts": "",
+                "src/unowned/module.d.cts": "",
+            },
+            [
+                ClassifiedSources(
+                    TypeScriptSourcesGeneratorTarget,
+                    ["module.cts", "module.d.cts", "module.d.mts", "module.mts"],
+                )
+            ],
+            id="module_sources_and_declarations",
+        ),
+        pytest.param(
+            {
                 "src/owned/BUILD": "typescript_sources()\n",
                 "src/owned/OwnedFile.ts": "",
                 "src/unowned/UnownedFile1.ts": "",

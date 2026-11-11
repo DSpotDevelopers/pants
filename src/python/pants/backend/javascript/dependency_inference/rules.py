@@ -34,6 +34,7 @@ from pants.backend.typescript import tsconfig
 from pants.backend.typescript.target_types import TS_FILE_EXTENSIONS
 from pants.backend.typescript.tsconfig import ParentTSConfigRequest, TSConfig, find_parent_ts_config
 from pants.build_graph.address import Address
+from pants.core.target_types import FileSourceField, ResourceSourceField
 from pants.core.util_rules.unowned_dependency_behavior import (
     UnownedDependencyError,
     UnownedDependencyUsage,
@@ -103,7 +104,12 @@ async def infer_node_package_dependencies(
     )
     js_targets = await resolve_targets(**implicitly(Addresses(candidate_js_files)))
     return InferredDependencies(
-        tgt.address for tgt in js_targets if tgt.has_field(JSRuntimeSourceField)
+        tgt.address
+        for tgt in js_targets
+        if any(
+            tgt.has_field(field)
+            for field in (JSRuntimeSourceField, FileSourceField, ResourceSourceField)
+        )
     )
 
 
@@ -164,7 +170,12 @@ async def _prepare_inference_metadata(address: Address, file_path: str) -> Infer
 
 # TypeScript resolves a `.js` or `.jsx` specifier to the source it compiles from, see
 # https://www.typescriptlang.org/docs/handbook/modules/reference.html#file-extension-substitution
-_TYPESCRIPT_SOURCES_OF_SPECIFIER = {".js": (".ts", ".tsx", ".d.ts"), ".jsx": (".tsx",)}
+_TYPESCRIPT_SOURCES_OF_SPECIFIER = {
+    ".js": (".ts", ".tsx", ".d.ts"),
+    ".jsx": (".tsx",),
+    ".mjs": (".mts", ".d.mts"),
+    ".cjs": (".cts", ".d.cts"),
+}
 
 
 def _file_candidates(

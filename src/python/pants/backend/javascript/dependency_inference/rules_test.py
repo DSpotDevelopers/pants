@@ -654,7 +654,7 @@ def test_infers_exports_package_json_field_js_source_dependency(
 ) -> None:
     path = f"lib/{source}"
     exports = path if export_form == "string" else {"." if export_form == "root" else "lib": path}
-    build = 'javascript_sources()' if source == 'index.js' else f'files(sources=["{source}"])'
+    build = "javascript_sources()" if source == "index.js" else f'files(sources=["{source}"])'
     rule_runner.write_files(
         {
             "src/js/BUILD": "package_json()",
