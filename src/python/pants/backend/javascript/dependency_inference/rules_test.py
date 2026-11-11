@@ -24,6 +24,12 @@ from pants.backend.typescript.target_types import (
     TypeScriptSourceTarget,
 )
 from pants.build_graph.address import Address
+from pants.core.target_types import (
+    FilesGeneratorTarget,
+    FileTarget,
+    ResourcesGeneratorTarget,
+    ResourceTarget,
+)
 from pants.core.util_rules.unowned_dependency_behavior import UnownedDependencyError
 from pants.engine.internals.graph import Owners, OwnersRequest
 from pants.engine.rules import QueryRule
@@ -52,6 +58,10 @@ def rule_runner() -> RuleRunner:
             TSXSourcesGeneratorTarget,
             TypeScriptSourceTarget,
             TypeScriptSourcesGeneratorTarget,
+            FileTarget,
+            FilesGeneratorTarget,
+            ResourceTarget,
+            ResourcesGeneratorTarget,
         ],
     )
     return rule_runner
@@ -306,6 +316,77 @@ def test_infers_js_dependencies_with_file_suffix(rule_runner: RuleRunner) -> Non
     assert set(addresses) == {
         Address("root/project/src/__generated__", relative_file_path="moduleA.generated.js"),
     }
+
+
+def test_infers_dependencies_on_targets_owning_imported_non_js_files(
+    rule_runner: RuleRunner,
+) -> None:
+    rule_runner.write_files(
+        {
+            "src/js/BUILD": dedent(
+                """\
+                javascript_sources()
+                resources(name="styles", sources=["*.css"])
+                files(name="data", sources=["*.json"])
+                """
+            ),
+            "src/js/index.js": dedent(
+                """\
+                import "./index.css";
+                import rows from "./rows.json";
+                """
+            ),
+            "src/js/index.css": "",
+            "src/js/rows.json": "[]",
+        }
+    )
+
+    index_tgt = rule_runner.get_target(Address("src/js", relative_file_path="index.js"))
+    addresses = rule_runner.request(
+        InferredDependencies,
+        [InferJSDependenciesRequest(JSSourceInferenceFieldSet.create(index_tgt))],
+    ).include
+
+    assert set(addresses) == {
+        Address("src/js", target_name="styles", relative_file_path="index.css"),
+        Address("src/js", target_name="data", relative_file_path="rows.json"),
+    }
+
+
+def test_a_dotted_module_name_still_completes_to_its_source_file(rule_runner: RuleRunner) -> None:
+    rule_runner.write_files(
+        {
+            "src/js/BUILD": "javascript_sources()",
+            "src/js/index.js": 'import { x } from "./moduleA.generated";',
+            "src/js/moduleA.generated.js": "",
+        }
+    )
+
+    index_tgt = rule_runner.get_target(Address("src/js", relative_file_path="index.js"))
+    addresses = rule_runner.request(
+        InferredDependencies,
+        [InferJSDependenciesRequest(JSSourceInferenceFieldSet.create(index_tgt))],
+    ).include
+
+    assert set(addresses) == {Address("src/js", relative_file_path="moduleA.generated.js")}
+
+
+def test_an_imported_non_js_file_no_target_owns_is_still_unowned(rule_runner: RuleRunner) -> None:
+    rule_runner.set_options(["--nodejs-infer-unowned-dependency-behavior=error"])
+    rule_runner.write_files(
+        {
+            "src/js/BUILD": "javascript_sources()",
+            "src/js/index.js": 'import "./index.css";',
+            "src/js/index.css": "",
+        }
+    )
+
+    index_tgt = rule_runner.get_target(Address("src/js", relative_file_path="index.js"))
+    with engine_error(UnownedDependencyError, contains="index.css"):
+        rule_runner.request(
+            InferredDependencies,
+            [InferJSDependenciesRequest(JSSourceInferenceFieldSet.create(index_tgt))],
+        )
 
 
 def test_infers_js_dependencies_with_compiled_typescript_modules(rule_runner: RuleRunner) -> None:
