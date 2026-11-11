@@ -171,7 +171,10 @@ def _add_extensions(file_imports: frozenset[str], file_extensions: tuple[str, ..
         for string in (
             [file_import]
             if PurePath(file_import).suffix in valid_file_extensions
-            else [f"{file_import}{ext}" for ext in extensions]
+            # Any other import may name a file that is not a module (a stylesheet, a JSON
+            # document), so the exact path is a candidate too. The extension-completed candidates
+            # stay for a module path whose name contains a dot (`./moduleA.generated`).
+            else [file_import, *(f"{file_import}{ext}" for ext in extensions)]
         )
     )
 
