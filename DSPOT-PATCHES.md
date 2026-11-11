@@ -3,7 +3,7 @@
 This is official Pants **2.33.2** plus only the patches below. Every patch goes upstream and has an exit.
 Apart from the version label and this file, nothing else differs from the `release_2.33.2` tag.
 
-Version: `2.33.2+dspot.3`. A repository pins it like any Pants version: `pants_version = "2.33.2+dspot.3"` in
+Version: `2.33.2+dspot.4`. A repository pins it like any Pants version: `pants_version = "2.33.2+dspot.4"` in
 `pants.toml`. The stock scie-pants launcher fetches it through `PANTS_BOOTSTRAP_URLS`, set in the repository's
 committed `.pants.bootstrap`. There's no wrapper script.
 
@@ -13,6 +13,7 @@ committed `.pants.bootstrap`. There's no wrapper script.
 | 2 | JS inference finds the owner of an imported non-module file, such as `./x.css` or `./rows.json` | Branch `dspot/js-infer-non-js-files` on this fork, on Pants main; the issue and PR are posted by a person (Pants requires human-written text) | Drop it when a Pants release we pin contains the upstream fix. |
 | 3 | JS inference reads a bundler query's file: `./App.tsx?raw`, `./logo.svg?url` | Branch `dspot/js-infer-bundler-query` (on patch 2's), posted the same way | Drop it when a Pants release we pin contains the upstream fix. |
 | 4 | A TypeScript `.js` specifier infers the source it compiles from: `./errors.js` -> `errors.ts`/`.tsx`/`.d.ts`, `./View.jsx` -> `View.tsx` | Branch `dspot/js-infer-ts-js-specifier` (on patch 3's), posted the same way | Drop it when a Pants release we pin contains the upstream fix. |
+| 5 | TypeScript check keeps the discovered named/root Node project and a sandbox-relative wrapper path (`9b4d1aed7`, `cfe58a301`) | Coordinator/owner owns external contribution review and submission under the human-written-text rule. | Drop it when a Pants release we pin contains the equivalent named-project/root-wrapper fix. |
 
 ## Rules for this branch
 
@@ -20,7 +21,7 @@ committed `.pants.bootstrap`. There's no wrapper script.
   upstream or removed; it is never kept as a local-only change.
 - `+dspot.2` is the same source as `+dspot.1`, rebuilt with only the version label changed, so it can be published as an
   immutable release (immutable releases were enabled on this fork after `+dspot.1` was published). `+dspot.3` adds
-  patches 3 and 4. Every release from `+dspot.2` on is immutable: the launcher can't check the PEX's hash.
+  patches 3 and 4; `+dspot.4` adds patch 5. Every release from `+dspot.2` on is immutable: the launcher can't check the PEX's hash.
 - When a patch's upstream PR is released, the next build drops it and bumps the `+dspot.N` label. When none is left,
   repositories go back to the plain official version and this branch is retired.
 - Building:
