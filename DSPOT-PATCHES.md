@@ -3,7 +3,7 @@
 This is official Pants **2.33.2** plus only the patches below. Every patch is open upstream and has an exit.
 Apart from the version label and this file, nothing else differs from the `release_2.33.2` tag.
 
-Version: `2.33.2+dspot.1`. A repository pins it like any Pants version: `pants_version = "2.33.2+dspot.1"` in
+Version: `2.33.2+dspot.2`. A repository pins it like any Pants version: `pants_version = "2.33.2+dspot.2"` in
 `pants.toml`. The stock scie-pants launcher fetches it through `PANTS_BOOTSTRAP_URLS`, set in the repository's
 committed `.pants.bootstrap`. There's no wrapper script.
 
@@ -16,6 +16,8 @@ committed `.pants.bootstrap`. There's no wrapper script.
 
 - Patches come only from open upstream PRs, each with its row above. A patch that upstream rejects is either reworked
   upstream or removed; it is never kept as a local-only change.
+- `+dspot.2` is the same source as `+dspot.1`, rebuilt with only the version label changed, so it can be published as an
+  immutable release (immutable releases were enabled on this fork after `+dspot.1` was published).
 - When a patch's upstream PR is released, the next build drops it and bumps the `+dspot.N` label. When none is left,
   repositories go back to the plain official version and this branch is retired.
 - Building:
