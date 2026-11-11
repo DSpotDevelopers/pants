@@ -183,6 +183,48 @@ def test_typescript_check_with_named_package_target(project_root: str, type_erro
         assert "TS2322" in results.results[0].stdout
 
 
+@pytest.mark.parametrize("named_config", [False, True])
+@pytest.mark.parametrize("selection", ["clean", "broken", "dependency"])
+def test_check_selects_tsconfig_program_without_unrelated_sibling(
+    named_config: bool, selection: str
+) -> None:
+    rule_runner = _create_rule_runner("pnpm")
+    files = _load_project_test_files("basic_project")
+    compiler_options = json.loads(files["basic_project/tsconfig.json"])["compilerOptions"]
+    compiler_options["composite"] = True
+    compiler_options["rootDir"] = "../src" if named_config else "."
+    selected_config = "configs/tsconfig.workflow-tests.json" if named_config else "src/tsconfig.json"
+    files["basic_project/tsconfig.json"] = json.dumps(
+        {"files": [], "references": [{"path": selected_config}, {"path": "other"}],
+         "compilerOptions": {"outDir": "./dist"}}
+    )
+    selected = {"compilerOptions": compiler_options,
+                "include": ["../src/**/*.ts" if named_config else "*.ts"]}
+    if selection == "dependency":
+        selected["references"] = [{"path": "../other"}]
+    files["basic_project/" + selected_config] = json.dumps(selected)
+    files["basic_project/other/tsconfig.json"] = json.dumps(
+        {"compilerOptions": {**compiler_options, "rootDir": "."}, "include": ["*.ts"]}
+    )
+    files["basic_project/other/BUILD"] = "typescript_sources(name='ts_sources')\n"
+    files["basic_project/other/broken.ts"] = "export const broken: string = 42;\n"
+    rule_runner.write_files(files)
+    directory, filename = ("other", "broken.ts") if selection == "broken" else ("src", "index.ts")
+    target = rule_runner.get_target(
+        Address("basic_project/" + directory, target_name="ts_sources", relative_file_path=filename)
+    )
+    results = rule_runner.request(
+        CheckResults, [TypeScriptCheckRequest([TypeScriptCheckFieldSet.create(target)])]
+    )
+    assert len(results.results) == 1
+    result = results.results[0]
+    if selection == "clean":
+        assert result.exit_code == 0, result.stdout + result.stderr
+    else:
+        assert result.exit_code != 0
+        assert "TS2322" in result.stdout + result.stderr
+
+
 def test_typescript_check_success(
     basic_rule_runner: RuleRunnerWithProjectAndPackageManager,
 ) -> None:
