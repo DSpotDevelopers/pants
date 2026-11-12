@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from typing import Any
 from unittest.mock import patch
 
@@ -18,8 +19,69 @@ from pants.backend.typescript.goals.check_test_utils import (
 )
 from pants.build_graph.address import Address
 from pants.core.goals.check import CheckResults
-from pants.engine.fs import Snapshot
+from pants.engine.fs import CreateDigest, Digest, FileContent, Snapshot, SymlinkEntry
+from pants.engine.internals.native_engine import MergeDigests
+from pants.engine.intrinsics import create_digest, get_digest_entries, merge_digests
 from pants.engine.process import Process
+
+
+def test_discovery_does_not_snapshot_cyclic_installed_workspace_links() -> None:
+    runner = _create_rule_runner("pnpm")
+    runner.write_files(_load_project_test_files("basic_project"))
+    target = runner.get_target(
+        Address("basic_project/src", target_name="ts_sources", relative_file_path="index.ts")
+    )
+    links = {
+        SymlinkEntry("basic_project/first/node_modules/@test/second", "../../../second"),
+        SymlinkEntry("basic_project/second/node_modules/@test/first", "../../../first"),
+    }
+    installed: set[Digest] = set()
+    discoveries: list[Process] = []
+    prepare = check.prepare_tool_process
+    snapshot = check.digest_to_snapshot
+    execute = check.execute_process
+
+    async def install_links(*args: Any, **kwargs: Any) -> Process:
+        process = await prepare(*args, **kwargs)
+        if "--showConfig" in args[0].args:
+            workspace = await create_digest(
+                CreateDigest(
+                    [
+                        FileContent("basic_project/first/package.json", b'{"name":"@test/first"}'),
+                        FileContent("basic_project/second/package.json", b'{"name":"@test/second"}'),
+                        *links,
+                    ]
+                )
+            )
+            digest = await merge_digests(MergeDigests([process.input_digest, workspace]))
+            installed.add(digest)
+            return replace(process, input_digest=digest)
+        return process
+
+    async def source_inventory(digest: Digest) -> Snapshot:
+        # Refuse before walking the cycle, so the red control cannot exhaust its host.
+        assert digest not in installed, "discovery snapshots the installed workspace cycle"
+        return await snapshot(digest)
+
+    async def discover(process: Process, **kwargs: Any):
+        if "--showConfig" in process.argv:
+            entries = await get_digest_entries(process.input_digest)
+            assert links.issubset(entries), "discovery lost the installed workspace links"
+            discoveries.append(process)
+        return await execute(process, **kwargs)
+
+    with (
+        patch.object(check, "prepare_tool_process", install_links),
+        patch.object(check, "digest_to_snapshot", source_inventory),
+        patch.object(check, "execute_process", discover),
+    ):
+        results = runner.request(
+            CheckResults, [TypeScriptCheckRequest([TypeScriptCheckFieldSet.create(target)])]
+        )
+    assert len(discoveries) == 1
+    assert len(results.results) == 1
+    result = results.results[0]
+    assert result.exit_code == 0, result.stdout + result.stderr
 
 
 def test_compiler_digest_excludes_unrelated_declared_assets() -> None:
