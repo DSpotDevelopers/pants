@@ -74,6 +74,7 @@ def rule_runner() -> RuleRunner:
 def test_find_putative_tsx_targets(
     rule_runner: RuleRunner, files: dict, putative_map: list[ClassifiedSources]
 ) -> None:
+    files.update({"src/unowned/not_jsx.mtsx": "", "src/unowned/not_jsx.ctsx": ""})
     rule_runner.write_files(files)
     putative_targets = rule_runner.request(
         PutativeTargets,

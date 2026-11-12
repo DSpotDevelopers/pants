@@ -647,18 +647,20 @@ def test_infers_bin_package_json_field_js_source_dependency(rule_runner: RuleRun
     assert set(addresses) == {Address("src/js/bin", relative_file_path="index.js")}
 
 
-@pytest.mark.parametrize(
-    "exports", ("lib/index.js", {".": "lib/index.js"}, {"lib": "lib/index.js"})
-)
+@pytest.mark.parametrize("source", ["index.js", "index.d.ts", "schema.json"])
+@pytest.mark.parametrize("export_form", ["string", "root", "subpath"])
 def test_infers_exports_package_json_field_js_source_dependency(
-    rule_runner: RuleRunner, exports: str | dict[str, str]
+    rule_runner: RuleRunner, source: str, export_form: str
 ) -> None:
+    path = f"lib/{source}"
+    exports = path if export_form == "string" else {"." if export_form == "root" else "lib": path}
+    build = "javascript_sources()" if source == "index.js" else f'files(sources=["{source}"])'
     rule_runner.write_files(
         {
             "src/js/BUILD": "package_json()",
             "src/js/package.json": given_package("ham", "0.0.1", exports=exports),
-            "src/js/lib/BUILD": "javascript_sources()",
-            "src/js/lib/index.js": "",
+            "src/js/lib/BUILD": build,
+            f"src/js/lib/{source}": "",
         }
     )
 
@@ -668,7 +670,7 @@ def test_infers_exports_package_json_field_js_source_dependency(
         [InferNodePackageDependenciesRequest(NodePackageInferenceFieldSet.create(pkg_tgt))],
     ).include
 
-    assert set(addresses) == {Address("src/js/lib", relative_file_path="index.js")}
+    assert set(addresses) == {Address("src/js/lib", relative_file_path=source)}
 
 
 @pytest.mark.parametrize("exports", ("lib/*.js", {".": "lib/*.js"}, {"lib": "lib/*.js"}))
