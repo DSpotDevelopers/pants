@@ -35,7 +35,9 @@ from pants.backend.typescript.target_types import (
     TypeScriptTestTarget,
 )
 from pants.build_graph.address import Address
+from pants.core.environments.target_types import LocalWorkspaceEnvironmentTarget
 from pants.core.goals.test import TestResult, get_filtered_environment
+from pants.engine.environment import EnvironmentName
 from pants.engine.rules import QueryRule
 from pants.engine.target import Target
 from pants.testutil.rule_runner import RuleRunner
@@ -318,6 +320,43 @@ def given_request_for(*js_test: Target, package: Target) -> JSTestRequest.Batch:
         tuple(JSTestFieldSet.create(tgt) for tgt in js_test),
         TestMetadata(tuple(), package),
     )
+
+
+def test_workspace_tests_run_only_selected_files_and_refresh_between_sessions() -> None:
+    runner = RuleRunner(
+        rules=[*test.rules(), get_filtered_environment, QueryRule(TestResult, [JSTestRequest.Batch])],
+        target_types=[PackageJsonTarget, TypeScriptTestsGeneratorTarget, TypeScriptTestTarget,
+                      LocalWorkspaceEnvironmentTarget],
+        inherent_environment=EnvironmentName("workspace"),
+    )
+    options = ["--nodejs-package-manager=pnpm", "--nodejs-package-managers={'pnpm': '9.15.4'}",
+               "--environments-preview-names={'workspace': '//:workspace'}"]
+    runner.set_options(options, env_inherit={"PATH"})
+    runner.write_files({
+        "BUILD": "package_json(name='package')\ntypescript_tests(name='tests', environment='workspace')\n"
+                 "experimental_workspace_environment(name='workspace')\n",
+        "package.json": json.dumps({"name": "workspace-tests", "version": "1.0.0", "type": "module",
+                                     "scripts": {"test": "node --test"}}),
+        "pnpm-lock.yaml": "lockfileVersion: '9.0'\nsettings:\n  autoInstallPeers: true\n"
+                          "  excludeLinksFromLockfile: false\nimporters:\n  .: {}\n",
+        "selected.test.ts": "import { test } from 'node:test';\n"
+                            "import assert from 'node:assert/strict';\n"
+                            "import { readFileSync } from 'node:fs';\n"
+                            "test('workspace value', () => assert.equal(readFileSync('value.txt', 'utf8'), '42'));\n",
+        "unselected.test.ts": "throw new Error('an unselected file must not run');\n",
+        # Deliberately no owner: a sandbox cannot read this workspace-only input.
+        "value.txt": "42",
+    })
+    target = runner.get_target(Address("", target_name="tests", relative_file_path="selected.test.ts"))
+    package = runner.get_target(Address("", target_name="package", generated_name="pkg"))
+    request = given_request_for(target, package=package)
+    first = runner.request(TestResult, [request])
+    assert first.exit_code == 0, first.stdout_bytes + first.stderr_bytes
+
+    runner.write_files({"value.txt": "43"})
+    runner.set_options(options, env_inherit={"PATH"})
+    second = runner.request(TestResult, [request])
+    assert second.exit_code == 1, "workspace results must not be reused across sessions"
 
 
 def test_typescript_test_files(
