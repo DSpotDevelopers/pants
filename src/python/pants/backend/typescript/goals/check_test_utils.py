@@ -17,6 +17,7 @@ from pants.backend.typescript.target_types import (
 )
 from pants.core.goals.check import CheckResults
 from pants.core.target_types import FileTarget, ResourceTarget
+from pants.engine.fs import Digest, DigestEntries
 from pants.engine.rules import QueryRule
 from pants.testutil.rule_runner import RuleRunner
 
@@ -30,6 +31,7 @@ def _create_rule_runner(package_manager: str) -> RuleRunner:
             *nodejs_tool.rules(),
             *check.rules(),
             QueryRule(CheckResults, [TypeScriptCheckRequest]),
+            QueryRule(DigestEntries, [Digest]),
         ],
         target_types=[
             package_json.PackageJsonTarget,
