@@ -9,6 +9,7 @@ import shlex
 from dataclasses import dataclass
 from pathlib import PurePath
 
+from pants.core.environments.target_types import EnvironmentTarget
 from pants.core.util_rules import system_binaries
 from pants.core.util_rules.adhoc_binaries import find_gunzip
 from pants.core.util_rules.system_binaries import ArchiveFormat as ArchiveFormat
@@ -152,6 +153,7 @@ async def convert_digest_to_MaybeExtractArchiveRequest(
 async def maybe_extract_archive(
     request: MaybeExtractArchiveRequest,
     system_binaries_environment: SystemBinariesSubsystem.EnvironmentAware,
+    environment: EnvironmentTarget,
 ) -> ExtractedArchive:
     """If digest contains a single archive file, extract it, otherwise return the input digest."""
     extract_archive_dir = "__extract_archive_dir"
@@ -173,23 +175,25 @@ async def maybe_extract_archive(
         return ExtractedArchive(request.digest)
 
     merge_digest_get = merge_digests(MergeDigests((request.digest, output_dir_digest)))
+    archive_process_path = os.path.join(environment.sandbox_base_path(), archive_path)
+    extract_process_dir = os.path.join(environment.sandbox_base_path(), extract_archive_dir)
     env = {}
     append_only_caches: FrozenDict[str, str] = FrozenDict({})
     if is_zip:
         input_digest, unzip_binary = await concurrently(
             merge_digest_get, find_unzip(**implicitly())
         )
-        argv = unzip_binary.extract_archive_argv(archive_path, extract_archive_dir)
+        argv = unzip_binary.extract_archive_argv(archive_process_path, extract_process_dir)
     elif is_tar:
         input_digest, tar_binary = await concurrently(merge_digest_get, find_tar(**implicitly()))
         argv = tar_binary.extract_archive_argv(
-            archive_path, extract_archive_dir, archive_suffix=archive_suffix
+            archive_process_path, extract_process_dir, archive_suffix=archive_suffix
         )
         # `tar` expects to find a couple binaries like `gzip` and `xz` by looking on the PATH.
         env = {"PATH": os.pathsep.join(system_binaries_environment.system_binary_paths)}
     else:
         input_digest, gunzip = await concurrently(merge_digest_get, find_gunzip(**implicitly()))
-        argv = gunzip.extract_archive_argv(archive_path, extract_archive_dir)
+        argv = gunzip.extract_archive_argv(archive_process_path, extract_process_dir)
         append_only_caches = gunzip.python_binary.APPEND_ONLY_CACHES
 
     result = await execute_process_or_raise(

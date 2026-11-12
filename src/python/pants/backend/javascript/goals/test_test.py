@@ -21,14 +21,21 @@ from pants.backend.javascript.target_types import (
 from pants.backend.tsx.target_types import TSXTestTarget
 from pants.backend.typescript.target_types import TypeScriptTestTarget
 from pants.build_graph.address import Address
+from pants.engine.target import Target
 from pants.testutil.rule_runner import run_rule_with_mocks
 
 
 @pytest.mark.parametrize(
     "target_type, filename",
-    [(JSTestTarget, "runner.test.js"), (TypeScriptTestTarget, "runner.test.ts"), (TSXTestTarget, "runner.test.tsx")],
+    [
+        (JSTestTarget, "runner.test.js"),
+        (TypeScriptTestTarget, "runner.test.ts"),
+        (TSXTestTarget, "runner.test.tsx"),
+    ],
 )
-def test_test_targets_select_their_execution_environment(target_type, filename: str) -> None:
+def test_test_targets_select_their_execution_environment(
+    target_type: type[Target], filename: str
+) -> None:
     target = target_type({"source": filename, "environment": "workspace"}, Address("tests"))
     field_set = JSTestFieldSet.create(target)
     assert field_set.environment.value == "workspace"
@@ -81,7 +88,9 @@ def test_batches_are_separated_on_owning_packages() -> None:
         pytest.param(
             given_field_set(Address("1"), batch_compatibility_tag="default"),
             given_field_set(
-                Address("2"), batch_compatibility_tag="default", env_vars=("NODE_ENV=dev",)
+                Address("2"),
+                batch_compatibility_tag="default",
+                env_vars=("NODE_ENV=dev",),
             ),
             id="extra_env_vars",
         ),
