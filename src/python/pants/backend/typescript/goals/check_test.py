@@ -22,6 +22,7 @@ from pants.backend.typescript.target_types import (
     TypeScriptTestsGeneratorTarget,
 )
 from pants.build_graph.address import Address
+from pants.core.goals import package
 from pants.core.goals.check import CheckResults
 from pants.core.target_types import FileTarget
 from pants.engine.rules import QueryRule
@@ -62,6 +63,7 @@ def _create_rule_runner(package_manager: str) -> RuleRunner:
         rules=[
             *nodejs_tool.rules(),
             *check.rules(),
+            *package.rules(),
             QueryRule(CheckResults, [TypeScriptCheckRequest]),
         ],
         target_types=[
@@ -662,3 +664,97 @@ def test_typescript_check_resolves_member_only_deps(
         f"TypeScript check failed — member node_modules likely missing from sandbox:\n"
         f"{result.stdout}\n{result.stderr}"
     )
+
+
+@pytest.mark.parametrize("generated", ["file", "codegen", "package"])
+@pytest.mark.parametrize("type_error", [False, True])
+def test_typescript_config_data_dependencies(generated: str, type_error: bool) -> None:
+    from pants.backend.javascript import package_json
+    from pants.backend.javascript.subsystems import nodejs_tool
+    from pants.backend.shell.goals import package as shell_package
+    from pants.backend.shell.target_types import ShellCommandPackageTarget, ShellCommandTarget
+    from pants.backend.shell.util_rules import shell_command
+    from pants.backend.typescript.goals import check
+    from pants.backend.typescript.target_types import TypeScriptSourcesGeneratorTarget
+    from pants.core.goals import package
+    from pants.core.target_types import FileTarget
+    from pants.core.util_rules import archive
+    from pants.engine.rules import QueryRule
+    from pants.testutil.rule_runner import RuleRunner
+
+    runner = RuleRunner(
+        rules=[
+            *nodejs_tool.rules(),
+            *check.rules(),
+            *shell_command.rules(),
+            *shell_package.rules(),
+            *package.rules(),
+            *archive.rules(),
+            QueryRule(CheckResults, [TypeScriptCheckRequest]),
+        ],
+        target_types=[
+            package_json.PackageJsonTarget,
+            TypeScriptSourcesGeneratorTarget,
+            FileTarget,
+            ShellCommandTarget,
+            ShellCommandPackageTarget,
+        ],
+    )
+    runner.set_options(["--nodejs-package-manager=pnpm"], env_inherit={"PATH"})
+    declaration = "declare const sdkValue: number;"
+    producer = (
+        "shell_command(name='sdk', command=\"mkdir -p vendor/sdk && "
+        f"printf '%s' '{declaration}' > vendor/sdk/index.d.ts\", "
+        "tools=['mkdir'], output_directories=['vendor'])"
+        if generated == "codegen"
+        else "file(name='sdk', source='vendor/sdk/index.d.ts')"
+    )
+    if generated == "package":
+        producer = (
+            "package_shell_command(name='sdk', command=\"mkdir -p sdk/node_modules && "
+            "ln -s .. sdk/node_modules/sdk && "
+            f"printf '%s' '{declaration}' > sdk/index.d.ts\", "
+            "tools=['mkdir', 'ln'], output_directories=['sdk'], output_path='vendor', "
+            "execution_dependencies=[':tool-input'])\n"
+            "package_shell_command(name='tool-input', command=\"mkdir -p src && "
+            "printf '%s' 'const privateError: string = 42;' > src/tool-input.ts\", "
+            "tools=['mkdir'], output_files=['src/tool-input.ts'], output_path='')"
+        )
+    files = {
+        "project/package.json": _load_project_test_files("basic_project")[
+            "basic_project/package.json"
+        ],
+        "project/pnpm-lock.yaml": _load_project_test_files("basic_project")[
+            "basic_project/pnpm-lock.yaml"
+        ],
+        "BUILD": "file(name='config', source='project/tsconfig.json', dependencies=[':sdk'])\n"
+        + producer,
+        "project/tsconfig.json": json.dumps(
+            {
+                "compilerOptions": {
+                    "strict": True,
+                    "skipLibCheck": False,
+                    "outDir": "dist",
+                    "types": ["sdk"],
+                    "typeRoots": ["../vendor"],
+                },
+                "include": ["src/*.ts"],
+            }
+        ),
+        "project/BUILD": "package_json()",
+        "project/src/BUILD": "typescript_sources()",
+        "project/src/index.ts": "export const answer: "
+        + ("string" if type_error else "number")
+        + " = sdkValue;",
+    }
+    if generated == "file":
+        files["vendor/sdk/index.d.ts"] = declaration
+    runner.write_files(files)
+    target = runner.get_target(Address("project/src", relative_file_path="index.ts"))
+    result = runner.request(
+        CheckResults, [TypeScriptCheckRequest([TypeScriptCheckFieldSet.create(target)])]
+    ).results[0]
+    assert result.exit_code == (1 if type_error else 0), result.stdout + result.stderr
+    assert "TS2688" not in result.stdout
+    if type_error:
+        assert "TS2322" in result.stdout
