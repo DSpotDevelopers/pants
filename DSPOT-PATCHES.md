@@ -3,7 +3,7 @@
 This is official Pants **2.33.2** plus only the patches below. Every patch goes upstream and has an exit.
 Apart from the version label and this file, nothing else differs from the `release_2.33.2` tag.
 
-Version: `2.33.2+dspot.5`. A repository pins it like any Pants version: `pants_version = "2.33.2+dspot.5"` in
+Version: `2.33.2+dspot.6`. A repository pins it like any Pants version: `pants_version = "2.33.2+dspot.6"` in
 `pants.toml`. The stock scie-pants launcher fetches it through `PANTS_BOOTSTRAP_URLS`, set in the repository's
 committed `.pants.bootstrap`. There's no wrapper script.
 
@@ -14,8 +14,8 @@ committed `.pants.bootstrap`. There's no wrapper script.
 | 3 | JS inference reads a bundler query's file: `./App.tsx?raw`, `./logo.svg?url` | Branch `dspot/js-infer-bundler-query` (on patch 2's), posted the same way | Drop it when a Pants release we pin contains the upstream fix. |
 | 4 | A TypeScript `.js` specifier infers the source it compiles from: `./errors.js` -> `errors.ts`/`.tsx`/`.d.ts`, `./View.jsx` -> `View.tsx` | Branch `dspot/js-infer-ts-js-specifier` (on patch 3's), posted the same way | Drop it when a Pants release we pin contains the upstream fix. |
 | 5 | TypeScript check keeps the discovered named/root Node project and a sandbox-relative wrapper path (`9b4d1aed7`, `cfe58a301`) | Branch `dspot/ts-check-named-root-project` on this fork, on Pants main (60df85631); the issue and PR are posted by a person, as for patches 2-4 | Drop it when a Pants release we pin contains the equivalent named-project/root-wrapper fix. |
-| 6 | Preserve TypeScript compiler inputs: imported JavaScript, exported declarations, JSON resources and module-specific declarations; recognize `.mts`/`.cts` sources and declarations in TypeScript source/test default globs, preserving TSX extensions | DSpotDevelopers/pants#2, approved at `3fcae484e9`; coordinator/owner owns external review and submission | Drop it when a Pants release we pin contains equivalent compiler-input and export-inference fixes. |
-| 7 | TypeScript check builds the configs owning the selected sources, with their declared project references, rather than every member of a Node resolve | DSpotDevelopers/pants#2, approved at `3fcae484e9`; coordinator/owner owns external review and submission | Drop it when a Pants release we pin separates TypeScript programs from Node resolves. |
+| 6 | Preserve TypeScript compiler inputs: imported JavaScript, exported declarations, JSON resources and module-specific declarations; recognize `.mts`/`.cts` sources and declarations in TypeScript source/test default globs, preserving TSX extensions | DSpotDevelopers/pants#2, approved at `3fcae484e9`, and #3 (no snapshot of the installed resolve in config discovery), approved at `097d64486b`; coordinator/owner owns external review and submission | Drop it when a Pants release we pin contains equivalent compiler-input and export-inference fixes. |
+| 7 | TypeScript check builds the configs owning the selected sources, with their declared project references, rather than every member of a Node resolve | DSpotDevelopers/pants#2, approved at `3fcae484e9`, and #3 (no snapshot of the installed resolve in config discovery), approved at `097d64486b`; coordinator/owner owns external review and submission | Drop it when a Pants release we pin separates TypeScript programs from Node resolves. |
 
 ## Rules for this branch
 
@@ -23,8 +23,9 @@ committed `.pants.bootstrap`. There's no wrapper script.
   upstream or removed; it is never kept as a local-only change.
 - `+dspot.2` is the same source as `+dspot.1`, rebuilt with only the version label changed, so it can be published as an
   immutable release (immutable releases were enabled on this fork after `+dspot.1` was published). `+dspot.3` adds
-  patches 3 and 4; `+dspot.4` adds patch 5; `+dspot.5` adds patches 6 and 7. Every release from
-  `+dspot.2` on is immutable: the launcher can't check the PEX's hash.
+  patches 3 and 4; `+dspot.4` adds patch 5; `+dspot.5` adds patches 6 and 7; `+dspot.6` corrects them (#3: config
+  discovery inventories sources and configs, never the installed resolve's links). Every release from `+dspot.2` on is
+  immutable: the launcher can't check the PEX's hash.
 - When a patch's upstream PR is released, the next build drops it and bumps the `+dspot.N` label. When none is left,
   repositories go back to the plain official version and this branch is retired.
 - Building:
@@ -38,10 +39,8 @@ committed `.pants.bootstrap`. There's no wrapper script.
 
 - Official base: `release_2.33.2`.
 - Patches 1–5 are unchanged from immutable `2.33.2+dspot.4` (`835b8525b1`).
-- Patches 6 and 7 are the exact approved source of DSpotDevelopers/pants#2 at
-  `3fcae484e958ae175837cc1655ec042989484e64`: compiler inputs (`02ddcac0e`,
-  `e37dff2d1`), selected programs (`7cdd44117`, `659c156f1`), and the final digest
-  control and fix (`28fd0c456`, `3fcae484e9`). The red controls remain in the history.
-- This release preparation changes only this record and `src/python/pants/VERSION`.
-  It does not assert that artifacts have been built or published. Those require the
-  stock release build, native ABI/file checks, checksums and a fresh-cache bootstrap.
+- Patches 6 and 7 are immutable `2.33.2+dspot.5`'s source (DSpotDevelopers/pants#2 at `3fcae484e9`, release commit
+  `f8b6420a97`) plus DSpotDevelopers/pants#3 at `097d64486b`: its red control (`e4622b2c0`) and fix (`097d64486`),
+  which inventory the source/config query input instead of snapshotting the prepared process's installed resolve
+  (the pnpm workspace link cycle).
+- This release commit changes only this record and `src/python/pants/VERSION`.
