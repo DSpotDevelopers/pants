@@ -444,8 +444,9 @@ async def _select_tsconfig_programs(
         )
         # --showConfig enumerates filenames; it does not parse source contents. Supply
         # empty candidate files for this discovery only, without hydrating their blobs.
-        # Installed dependency/config contents remain authoritative and are never replaced.
-        existing = await digest_to_snapshot(process.input_digest)
+        # Inventory only sources/configs: the installed resolve can contain cyclic pnpm
+        # workspace links. Preserve that resolve for execution without walking its links.
+        existing = await digest_to_snapshot(query_input)
         existing_files = set(existing.files)
         inventory = await create_digest(
             CreateDigest(
