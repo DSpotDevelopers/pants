@@ -12,13 +12,13 @@ from pants.backend.shell.target_types import ShellCommandPackageTarget, ShellSou
 from pants.build_graph.address import Address
 from pants.core.goals import package
 from pants.core.goals.package import BuiltPackage, OutputPathField
+from pants.core.target_types import FileSourceField
 from pants.core.util_rules import source_files, system_binaries
 from pants.core.util_rules.source_files import SourceFiles, SourceFilesRequest
-from pants.core.target_types import FileSourceField
-from pants.engine.target import SourcesField
 from pants.engine.fs import DigestContents
 from pants.engine.internals.scheduler import ExecutionError
 from pants.engine.rules import QueryRule
+from pants.engine.target import SourcesField
 from pants.testutil.rule_runner import RuleRunner
 
 
@@ -304,9 +304,18 @@ def test_output_path_field(rule_runner: RuleRunner) -> None:
 
 
 def test_package_metadata_read_does_not_execute_the_package(rule_runner: RuleRunner) -> None:
-    rule_runner.write_files({"BUILD": "package_shell_command(name='sdk', command='exit 37', output_files=['sdk.d.ts'])"})
+    rule_runner.write_files(
+        {"BUILD": "package_shell_command(name='sdk', command='exit 37', output_files=['sdk.d.ts'])"}
+    )
     target = rule_runner.get_target(Address("", target_name="sdk"))
-    sources = rule_runner.request(SourceFiles, [SourceFilesRequest(
-        [target.get(SourcesField)], for_sources_types=[FileSourceField], enable_codegen=True,
-    )])
+    sources = rule_runner.request(
+        SourceFiles,
+        [
+            SourceFilesRequest(
+                [target.get(SourcesField)],
+                for_sources_types=[FileSourceField],
+                enable_codegen=True,
+            )
+        ],
+    )
     assert sources.files == ()

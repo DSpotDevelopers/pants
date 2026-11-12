@@ -473,17 +473,18 @@ def test_typescript_incremental_compilation_cache(
     )
 
 
-@pytest.mark.parametrize("generated", [False, True])
+@pytest.mark.parametrize("generated", ["file", "codegen", "package"])
 @pytest.mark.parametrize("type_error", [False, True])
-def test_typescript_config_data_dependencies(generated: bool, type_error: bool) -> None:
+def test_typescript_config_data_dependencies(generated: str, type_error: bool) -> None:
     from pants.backend.javascript import package_json
     from pants.backend.javascript.subsystems import nodejs_tool
-    from pants.backend.shell.target_types import ShellCommandTarget
+    from pants.backend.shell.goals import package as shell_package
+    from pants.backend.shell.target_types import ShellCommandPackageTarget, ShellCommandTarget
     from pants.backend.shell.util_rules import shell_command
     from pants.backend.typescript.goals import check
     from pants.backend.typescript.target_types import TypeScriptSourcesGeneratorTarget
-    from pants.core.target_types import FileTarget
     from pants.core.goals import package
+    from pants.core.target_types import FileTarget
     from pants.core.util_rules import archive
     from pants.engine.rules import QueryRule
     from pants.testutil.rule_runner import RuleRunner
@@ -493,12 +494,18 @@ def test_typescript_config_data_dependencies(generated: bool, type_error: bool) 
             *nodejs_tool.rules(),
             *check.rules(),
             *shell_command.rules(),
+            *shell_package.rules(),
             *package.rules(),
             *archive.rules(),
             QueryRule(CheckResults, [TypeScriptCheckRequest]),
         ],
-        target_types=[package_json.PackageJsonTarget, TypeScriptSourcesGeneratorTarget,
-                      FileTarget, ShellCommandTarget],
+        target_types=[
+            package_json.PackageJsonTarget,
+            TypeScriptSourcesGeneratorTarget,
+            FileTarget,
+            ShellCommandTarget,
+            ShellCommandPackageTarget,
+        ],
     )
     runner.set_options(["--nodejs-package-manager=pnpm"], env_inherit={"PATH"})
     declaration = "declare const sdkValue: number;"
@@ -506,28 +513,53 @@ def test_typescript_config_data_dependencies(generated: bool, type_error: bool) 
         "shell_command(name='sdk', command=\"mkdir -p vendor/sdk && "
         f"printf '%s' '{declaration}' > vendor/sdk/index.d.ts\", "
         "tools=['mkdir'], output_directories=['vendor'])"
-        if generated else "file(name='sdk', source='vendor/sdk/index.d.ts')"
+        if generated == "codegen"
+        else "file(name='sdk', source='vendor/sdk/index.d.ts')"
     )
+    if generated == "package":
+        producer = (
+            "package_shell_command(name='sdk', command=\"mkdir -p sdk/node_modules && "
+            "ln -s .. sdk/node_modules/sdk && "
+            f"printf '%s' '{declaration}' > sdk/index.d.ts\", "
+            "tools=['mkdir', 'ln'], output_directories=['sdk'], output_path='vendor', "
+            "execution_dependencies=[':tool-input'])\n"
+            "package_shell_command(name='tool-input', command=\"mkdir -p src && "
+            "printf '%s' 'const privateError: string = 42;' > src/tool-input.ts\", "
+            "tools=['mkdir'], output_files=['src/tool-input.ts'], output_path='')"
+        )
     files = {
         "package.json": _load_project_test_files("basic_project")["basic_project/package.json"],
         "pnpm-lock.yaml": _load_project_test_files("basic_project")["basic_project/pnpm-lock.yaml"],
-        "BUILD": "package_json(name='workspace')\nfile(name='config', source='tsconfig.json', dependencies=[':sdk'])\n" + producer,
-        "tsconfig.json": json.dumps({"compilerOptions": {
-            "strict": True, "skipLibCheck": False, "outDir": "dist",
-            "types": ["sdk"], "typeRoots": ["./vendor"],
-        }, "include": ["src/*.ts"]}),
+        "BUILD": "package_json(name='workspace')\nfile(name='config', source='tsconfig.json', dependencies=[':sdk'])\n"
+        + producer,
+        "tsconfig.json": json.dumps(
+            {
+                "compilerOptions": {
+                    "strict": True,
+                    "skipLibCheck": False,
+                    "outDir": "dist",
+                    "types": ["sdk"],
+                    "typeRoots": ["./vendor"],
+                },
+                "include": ["src/*.ts"],
+            }
+        ),
         "src/BUILD": "typescript_sources()",
-        "src/index.ts": "export const answer: " + ("string" if type_error else "number") + " = sdkValue;",
+        "src/index.ts": "export const answer: "
+        + ("string" if type_error else "number")
+        + " = sdkValue;",
         # A non-selected config's generator must never run.
         "other/BUILD": "file(name='config', source='tsconfig.json', dependencies=[':unused'])\n"
-                       "shell_command(name='unused', command='exit 37', output_files=['unused.d.ts'])",
+        "shell_command(name='unused', command='exit 37', output_files=['unused.d.ts'])",
         "other/tsconfig.json": '{"compilerOptions":{"outDir":"dist"},"include":["*.ts"]}',
     }
-    if not generated:
+    if generated == "file":
         files["vendor/sdk/index.d.ts"] = declaration
     runner.write_files(files)
     target = runner.get_target(Address("src", relative_file_path="index.ts"))
-    result = runner.request(CheckResults, [TypeScriptCheckRequest([TypeScriptCheckFieldSet.create(target)])]).results[0]
+    result = runner.request(
+        CheckResults, [TypeScriptCheckRequest([TypeScriptCheckFieldSet.create(target)])]
+    ).results[0]
     assert result.exit_code == (1 if type_error else 0), result.stdout + result.stderr
     assert "TS2688" not in result.stdout
     if type_error:

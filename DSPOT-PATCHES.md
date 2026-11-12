@@ -17,6 +17,8 @@ committed `.pants.bootstrap`. There's no wrapper script.
 | 6 | Preserve TypeScript compiler inputs: imported JavaScript, exported declarations, JSON resources and module-specific declarations; recognize `.mts`/`.cts` sources and declarations in TypeScript source/test default globs, preserving TSX extensions | DSpotDevelopers/pants#2, approved at `3fcae484e9`, and #3 (no snapshot of the installed resolve in config discovery), approved at `097d64486b`; coordinator/owner owns external review and submission | Drop it when a Pants release we pin contains equivalent compiler-input and export-inference fixes. |
 | 7 | TypeScript check builds the configs owning the selected sources, with their declared project references, rather than every member of a Node resolve | DSpotDevelopers/pants#2, approved at `3fcae484e9`, and #3 (no snapshot of the installed resolve in config discovery), approved at `097d64486b`; coordinator/owner owns external review and submission | Drop it when a Pants release we pin separates TypeScript programs from Node resolves. |
 
+| 8 | TypeScript check consumes the ordinary, generated and packaged data dependencies of its active tsconfigs; package-shell targets build through package, never source codegen; output validation matches captured names without walking dependency links | Branch `codex-r/compiler-config-inputs` on this fork; upstream submission belongs to a person | Drop it when a pinned Pants release carries equivalent config-input and package/source separation. |
+
 ## Rules for this branch
 
 - Patches come only from fixes that go upstream, each with its row above. A patch that upstream rejects is either reworked
