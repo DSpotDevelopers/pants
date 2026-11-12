@@ -58,6 +58,9 @@ cache policy: workspace results last one session. Archive extraction and Corepac
 inputs and outputs inside the process sandbox even when the selected environment executes commands in the
 checkout. The package's own test script still receives exactly the selected files.
 
+This unblocks company criterion 4 (BUILD files not from tailor): ordinary tailor-generated test targets can
+replace handwritten test-as-source declarations once a reviewed build is consumed.
+
 This proposal does not change the published version above. It needs fork review before a new build can include
 it; the owner controls any upstream submission. Its exit is the same as the other fixes: drop it when a pinned
 Pants release provides equivalent test-environment, bootstrap-path and cache behavior. A company checkout can

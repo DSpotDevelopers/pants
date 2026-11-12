@@ -369,9 +369,7 @@ class NodeJSProcessEnvironment:
 
 
 async def add_corepack_shims_to_digest(
-    binaries: NodeJSBinaries,
-    tool_shims: BinaryShims,
-    corepack_env_vars: EnvironmentVars,
+    binaries: NodeJSBinaries, tool_shims: BinaryShims, corepack_env_vars: EnvironmentVars
 ) -> Digest:
     directory_digest = await create_digest(CreateDigest([Directory("._corepack")]))
     binary_digest = binaries.digest if binaries.digest else EMPTY_DIGEST
