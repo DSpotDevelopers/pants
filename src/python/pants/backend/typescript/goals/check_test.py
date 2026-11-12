@@ -471,3 +471,64 @@ def test_typescript_incremental_compilation_cache(
     assert ts_status4 == "incremental_build", (
         f"Expected incremental_build after rebuild, got: {ts_status4}. Output: {combined_output4}"
     )
+
+
+@pytest.mark.parametrize("generated", [False, True])
+@pytest.mark.parametrize("type_error", [False, True])
+def test_typescript_config_data_dependencies(generated: bool, type_error: bool) -> None:
+    from pants.backend.javascript import package_json
+    from pants.backend.javascript.subsystems import nodejs_tool
+    from pants.backend.shell.target_types import ShellCommandTarget
+    from pants.backend.shell.util_rules import shell_command
+    from pants.backend.typescript.goals import check
+    from pants.backend.typescript.target_types import TypeScriptSourcesGeneratorTarget
+    from pants.core.target_types import FileTarget
+    from pants.core.goals import package
+    from pants.core.util_rules import archive
+    from pants.engine.rules import QueryRule
+    from pants.testutil.rule_runner import RuleRunner
+
+    runner = RuleRunner(
+        rules=[
+            *nodejs_tool.rules(),
+            *check.rules(),
+            *shell_command.rules(),
+            *package.rules(),
+            *archive.rules(),
+            QueryRule(CheckResults, [TypeScriptCheckRequest]),
+        ],
+        target_types=[package_json.PackageJsonTarget, TypeScriptSourcesGeneratorTarget,
+                      FileTarget, ShellCommandTarget],
+    )
+    runner.set_options(["--nodejs-package-manager=pnpm"], env_inherit={"PATH"})
+    declaration = "declare const sdkValue: number;"
+    producer = (
+        "shell_command(name='sdk', command=\"mkdir -p vendor/sdk && "
+        f"printf '%s' '{declaration}' > vendor/sdk/index.d.ts\", "
+        "tools=['mkdir'], output_directories=['vendor'])"
+        if generated else "file(name='sdk', source='vendor/sdk/index.d.ts')"
+    )
+    files = {
+        "package.json": _load_project_test_files("basic_project")["basic_project/package.json"],
+        "pnpm-lock.yaml": _load_project_test_files("basic_project")["basic_project/pnpm-lock.yaml"],
+        "BUILD": "package_json(name='workspace')\nfile(name='config', source='tsconfig.json', dependencies=[':sdk'])\n" + producer,
+        "tsconfig.json": json.dumps({"compilerOptions": {
+            "strict": True, "skipLibCheck": False, "outDir": "dist",
+            "types": ["sdk"], "typeRoots": ["./vendor"],
+        }, "include": ["src/*.ts"]}),
+        "src/BUILD": "typescript_sources()",
+        "src/index.ts": "export const answer: " + ("string" if type_error else "number") + " = sdkValue;",
+        # A non-selected config's generator must never run.
+        "other/BUILD": "file(name='config', source='tsconfig.json', dependencies=[':unused'])\n"
+                       "shell_command(name='unused', command='exit 37', output_files=['unused.d.ts'])",
+        "other/tsconfig.json": '{"compilerOptions":{"outDir":"dist"},"include":["*.ts"]}',
+    }
+    if not generated:
+        files["vendor/sdk/index.d.ts"] = declaration
+    runner.write_files(files)
+    target = runner.get_target(Address("src", relative_file_path="index.ts"))
+    result = runner.request(CheckResults, [TypeScriptCheckRequest([TypeScriptCheckFieldSet.create(target)])]).results[0]
+    assert result.exit_code == (1 if type_error else 0), result.stdout + result.stderr
+    assert "TS2688" not in result.stdout
+    if type_error:
+        assert "TS2322" in result.stdout
