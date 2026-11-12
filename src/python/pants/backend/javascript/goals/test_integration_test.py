@@ -126,7 +126,9 @@ def given_package_json(
     "test_script, package_json_target",
     [
         pytest.param(
-            {"test": "NODE_OPTIONS=--experimental-vm-modules jest"}, "package_json()", id="default"
+            {"test": "NODE_OPTIONS=--experimental-vm-modules jest"},
+            "package_json()",
+            id="default",
         ),
         pytest.param(
             {"jest-test": "NODE_OPTIONS=--experimental-vm-modules jest"},
@@ -324,31 +326,55 @@ def given_request_for(*js_test: Target, package: Target) -> JSTestRequest.Batch:
 
 def test_workspace_tests_run_only_selected_files_and_refresh_between_sessions() -> None:
     runner = RuleRunner(
-        rules=[*test.rules(), get_filtered_environment, QueryRule(TestResult, [JSTestRequest.Batch])],
-        target_types=[PackageJsonTarget, TypeScriptTestsGeneratorTarget, TypeScriptTestTarget,
-                      LocalWorkspaceEnvironmentTarget],
+        rules=[
+            *test.rules(),
+            get_filtered_environment,
+            QueryRule(TestResult, [JSTestRequest.Batch]),
+        ],
+        target_types=[
+            PackageJsonTarget,
+            TypeScriptTestsGeneratorTarget,
+            TypeScriptTestTarget,
+            LocalWorkspaceEnvironmentTarget,
+        ],
         inherent_environment=EnvironmentName("workspace"),
+        isolated_local_store=True,
     )
-    options = ["--nodejs-package-manager=pnpm", "--nodejs-package-managers={'pnpm': '9.15.4'}",
-               "--environments-preview-names={'workspace': '//:workspace'}"]
+    options = [
+        "--nodejs-package-manager=pnpm",
+        "--nodejs-package-managers={'pnpm': '9.15.4'}",
+        "--environments-preview-names={'workspace': '//:workspace'}",
+    ]
     runner.set_options(options, env_inherit={"PATH"})
-    runner.write_files({
-        "BUILD": "package_json(name='package')\ntypescript_tests(name='tests', environment='workspace')\n"
-                 "experimental_workspace_environment(name='workspace')\n",
-        "package.json": json.dumps({"name": "workspace-tests", "version": "1.0.0", "type": "module",
-                                     "scripts": {"test": "node --test"}}),
-        "pnpm-lock.yaml": "lockfileVersion: '9.0'\nsettings:\n  autoInstallPeers: true\n"
-                          "  excludeLinksFromLockfile: false\nimporters:\n  .: {}\n",
-        "selected.test.ts": "import { test } from 'node:test';\n"
-                            "import assert from 'node:assert/strict';\n"
-                            "import { readFileSync } from 'node:fs';\n"
-                            "test('workspace value', () => assert.equal(readFileSync('value.txt', 'utf8'), '42'));\n",
-        "unselected.test.ts": "throw new Error('an unselected file must not run');\n",
-        # Deliberately no owner: a sandbox cannot read this workspace-only input.
-        "value.txt": "42",
-    })
-    target = runner.get_target(Address("", target_name="tests", relative_file_path="selected.test.ts"))
-    package = runner.get_target(Address("", target_name="package", generated_name="pkg"))
+    runner.write_files(
+        {
+            "BUILD": "package_json(name='package')\ntypescript_tests(name='tests', environment='workspace')\n"
+            "experimental_workspace_environment(name='workspace')\n",
+            "package.json": json.dumps(
+                {
+                    "name": "workspace-tests",
+                    "version": "1.0.0",
+                    "type": "module",
+                    "scripts": {"test": "node --test"},
+                }
+            ),
+            "pnpm-lock.yaml": "lockfileVersion: '9.0'\nsettings:\n  autoInstallPeers: true\n"
+            "  excludeLinksFromLockfile: false\nimporters:\n  .: {}\n",
+            "selected.test.ts": "import { test } from 'node:test';\n"
+            "import assert from 'node:assert/strict';\n"
+            "import { readFileSync } from 'node:fs';\n"
+            "test('workspace value', () => assert.equal(readFileSync('value.txt', 'utf8'), '42'));\n",
+            "unselected.test.ts": "throw new Error('an unselected file must not run');\n",
+            # Deliberately no owner: a sandbox cannot read this workspace-only input.
+            "value.txt": "42",
+        }
+    )
+    target = runner.get_target(
+        Address("", target_name="tests", relative_file_path="selected.test.ts")
+    )
+    package = runner.get_target(
+        Address("", target_name="package", generated_name="workspace-tests")
+    )
     request = given_request_for(target, package=package)
     first = runner.request(TestResult, [request])
     assert first.exit_code == 0, first.stdout_bytes + first.stderr_bytes

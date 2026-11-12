@@ -8,6 +8,7 @@ from pants.backend.typescript.target_types import (
     TypeScriptSourceField,
     TypeScriptTestSourceField,
 )
+from pants.core.environments.target_types import EnvironmentField
 from pants.core.goals.test import (
     TestExtraEnvVarsField,
     TestsBatchCompatibilityTagField,
@@ -112,6 +113,7 @@ class TSXTestTarget(Target):
         TSXTestTimeoutField,
         TSXTestExtraEnvVarsField,
         TSXTestBatchCompatibilityTagField,
+        EnvironmentField,
     )
     help = "A single TSX test file."
 
@@ -150,5 +152,6 @@ class TSXTestsGeneratorTarget(TargetFilesGenerator):
         TSXTestTimeoutField,
         TSXTestExtraEnvVarsField,
         TSXTestBatchCompatibilityTagField,
+        EnvironmentField,
     )
     help = "Generate a `tsx_test` target for each file in the `sources` field."

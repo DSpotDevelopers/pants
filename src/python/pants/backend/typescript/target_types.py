@@ -5,6 +5,7 @@ from pants.backend.javascript.target_types import (
     JSRuntimeSourceField,
     JSTestRuntimeSourceField,
 )
+from pants.core.environments.target_types import EnvironmentField
 from pants.core.goals.test import (
     TestExtraEnvVarsField,
     TestsBatchCompatibilityTagField,
@@ -114,6 +115,7 @@ class TypeScriptTestTarget(Target):
         TypeScriptTestTimeoutField,
         TypeScriptTestExtraEnvVarsField,
         TypeScriptTestBatchCompatibilityTagField,
+        EnvironmentField,
     )
     help = "A single TypeScript test file."
 
@@ -152,5 +154,6 @@ class TypeScriptTestsGeneratorTarget(TargetFilesGenerator):
         TypeScriptTestTimeoutField,
         TypeScriptTestExtraEnvVarsField,
         TypeScriptTestBatchCompatibilityTagField,
+        EnvironmentField,
     )
     help = "Generate a `typescript_test` target for each file in the `sources` field."

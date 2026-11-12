@@ -29,6 +29,7 @@ from pants.backend.javascript.target_types import JSRuntimeSourceField, JSTestRu
 from pants.backend.typescript.target_types import TypeScriptSourceField
 from pants.base.glob_match_error_behavior import GlobMatchErrorBehavior
 from pants.build_graph.address import Address
+from pants.core.environments.target_types import EnvironmentField, EnvironmentTarget
 from pants.core.goals.test import (
     CoverageData,
     CoverageDataCollection,
@@ -56,7 +57,7 @@ from pants.engine.internals.graph import transitive_targets
 from pants.engine.internals.native_engine import MergeDigests, Snapshot
 from pants.engine.internals.selectors import concurrently
 from pants.engine.intrinsics import digest_to_snapshot, execute_process_with_retry, merge_digests
-from pants.engine.process import ProcessWithRetries
+from pants.engine.process import ProcessCacheScope, ProcessWithRetries
 from pants.engine.rules import Rule, collect_rules, implicitly, rule
 from pants.engine.target import Dependencies, SourcesField, Target, TransitiveTargetsRequest
 from pants.engine.unions import UnionRule
@@ -88,6 +89,7 @@ class JSTestFieldSet(TestFieldSet):
     dependencies: Dependencies
     timeout: TestTimeoutField
     extra_env_vars: TestExtraEnvVarsField
+    environment: EnvironmentField
 
 
 class JSTestRequest(TestRequest):
@@ -143,6 +145,7 @@ async def run_javascript_tests(
     batch: JSTestRequest.Batch[JSTestFieldSet, TestMetadata],
     test: TestSubsystem,
     test_extra_env: TestExtraEnv,
+    environment: EnvironmentTarget,
 ) -> TestResult:
     field_sets = batch.elements
     metadata = batch.partition_metadata
@@ -229,7 +232,12 @@ async def run_javascript_tests(
         ),
         **implicitly(),
     )
-    process = dataclasses.replace(process, cache_scope=test.default_process_cache_scope)
+    process = dataclasses.replace(
+        process,
+        cache_scope=ProcessCacheScope.PER_SESSION
+        if test.force
+        else environment.default_cache_scope,
+    )
 
     results = await execute_process_with_retry(ProcessWithRetries(process, test.attempts_default))
     coverage_data: JSCoverageData | None = None
