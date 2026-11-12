@@ -31,7 +31,14 @@ from pants.backend.typescript.target_types import (
 from pants.backend.typescript.tsconfig import AllTSConfigs, TSConfig, construct_effective_ts_configs
 from pants.base.build_root import BuildRoot
 from pants.core.goals.check import CheckRequest, CheckResult, CheckResults, CheckSubsystem
+from pants.core.goals.package import (
+    EnvironmentAwarePackageRequest,
+    PackageFieldSet,
+    TraverseIfNotPackageTarget,
+    environment_aware_package,
+)
 from pants.core.target_types import FileSourceField, ResourceSourceField
+from pants.core.util_rules.source_files import SourceFilesRequest, determine_source_files
 from pants.core.util_rules.system_binaries import CpBinary, FindBinary, MkdirBinary, TouchBinary
 from pants.engine.fs import (
     EMPTY_DIGEST,
@@ -41,7 +48,14 @@ from pants.engine.fs import (
     GlobMatchErrorBehavior,
     PathGlobs,
 )
-from pants.engine.internals.graph import find_all_targets, hydrate_sources, transitive_targets
+from pants.engine.internals.graph import (
+    OwnersRequest,
+    find_all_targets,
+    find_owners,
+    find_valid_field_sets,
+    hydrate_sources,
+    transitive_targets,
+)
 from pants.engine.internals.native_engine import MergeDigests
 from pants.engine.internals.selectors import concurrently
 from pants.engine.intrinsics import (
@@ -56,12 +70,13 @@ from pants.engine.rules import collect_rules, implicitly, rule
 from pants.engine.target import (
     AllTargets,
     FieldSet,
+    FieldSetsPerTargetRequest,
     HydrateSourcesRequest,
     SourcesField,
     Target,
     TransitiveTargetsRequest,
 )
-from pants.engine.unions import UnionRule
+from pants.engine.unions import UnionMembership, UnionRule
 from pants.option.global_options import GlobalOptions
 from pants.util.frozendict import FrozenDict
 from pants.util.logging import LogLevel
@@ -565,6 +580,7 @@ async def _typecheck_single_project(
     all_ts_configs: AllTSConfigs,
     build_root: BuildRoot,
     field_sets: tuple[TypeScriptCheckFieldSet, ...],
+    union_membership: UnionMembership,
 ) -> CheckResult:
     project_package_jsons, project_ts_configs = _collect_project_configs(
         project, all_package_jsons, all_ts_configs
@@ -628,8 +644,47 @@ async def _typecheck_single_project(
     )
     selected_configs = await path_globs_to_digest(PathGlobs(selection.config_files), **implicitly())
     # The compile gets actual contents only. Discovery's empty inventory never reaches tsc --build.
+    config_owners = await find_owners(OwnersRequest(selection.config_files), **implicitly())
+    config_dependencies = await transitive_targets(
+        TransitiveTargetsRequest(
+            config_owners,
+            should_traverse_deps_predicate=TraverseIfNotPackageTarget(
+                union_membership=union_membership,
+                roots=config_owners,
+            ),
+        ),
+        **implicitly(),
+    )
+    packages_per_target = await find_valid_field_sets(
+        FieldSetsPerTargetRequest(PackageFieldSet, config_dependencies.closure), **implicitly()
+    )
+    package_addresses = {field_set.address for field_set in packages_per_target.field_sets}
+    packages = await concurrently(
+        environment_aware_package(EnvironmentAwarePackageRequest(field_set))
+        for field_set in packages_per_target.field_sets
+    )
+    config_data = await determine_source_files(
+        SourceFilesRequest(
+            (
+                target[SourcesField]
+                for target in config_dependencies.closure
+                if target.has_field(SourcesField) and target.address not in package_addresses
+            ),
+            for_sources_types=(FileSourceField, ResourceSourceField),
+            enable_codegen=True,
+        ),
+        **implicitly(),
+    )
     input_digest = await merge_digests(
-        MergeDigests([input_digest, actual_assets, selected_configs])
+        MergeDigests(
+            [
+                input_digest,
+                actual_assets,
+                selected_configs,
+                config_data.snapshot.digest,
+                *(package.digest for package in packages),
+            ]
+        )
     )
     config_paths = selection.config_paths
     selected_addresses = {field_set.address for field_set in field_sets}
@@ -665,6 +720,7 @@ async def typecheck_typescript(
     check_subsystem: CheckSubsystem,
     global_options: GlobalOptions,
     build_root: BuildRoot,
+    union_membership: UnionMembership,
 ) -> CheckResults:
     if subsystem.skip:
         return CheckResults([], checker_name=request.tool_name, output_per_partition=False)
@@ -707,6 +763,7 @@ async def typecheck_typescript(
             all_ts_configs,
             build_root,
             tuple(project_field_sets),
+            union_membership,
         )
         for project, project_field_sets in projects.items()
     )

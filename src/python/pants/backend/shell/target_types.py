@@ -576,7 +576,6 @@ class ShellCommandPackageTarget(Target):
         ShellCommandRunnableDependenciesField,
         ShellCommandCommandField,
         ShellCommandLogOutputField,
-        ShellCommandSourcesField,
         ShellCommandTimeoutField,
         ShellCommandToolsField,
         ShellCommandExtraEnvVarsField,
