@@ -39,10 +39,7 @@ def rule_runner() -> RuleRunner:
 
 
 @pytest.fixture(
-    params=[
-        pytest.param(True, id="fake_suffix"),
-        pytest.param(False, id="actual_suffix"),
-    ]
+    params=[pytest.param(True, id="fake_suffix"), pytest.param(False, id="actual_suffix")]
 )
 def extract_from_file_info(request, rule_runner):
     use_fake_suffix = request.param
@@ -184,8 +181,7 @@ def test_create_zip_archive(rule_runner: RuleRunner, output_filename: str) -> No
 
 
 @pytest.mark.parametrize(
-    "format",
-    [ArchiveFormat.TAR, ArchiveFormat.TGZ, ArchiveFormat.TXZ, ArchiveFormat.TBZ2],
+    "format", [ArchiveFormat.TAR, ArchiveFormat.TGZ, ArchiveFormat.TXZ, ArchiveFormat.TBZ2]
 )
 def test_create_tar_archive(rule_runner: RuleRunner, format: ArchiveFormat) -> None:
     output_filename = f"demo/a.{format.value}"
@@ -212,8 +208,7 @@ def test_create_tar_archive(rule_runner: RuleRunner, format: ArchiveFormat) -> N
 
 
 @pytest.mark.parametrize(
-    "format",
-    [ArchiveFormat.TAR, ArchiveFormat.TGZ, ArchiveFormat.TXZ, ArchiveFormat.TBZ2],
+    "format", [ArchiveFormat.TAR, ArchiveFormat.TGZ, ArchiveFormat.TXZ, ArchiveFormat.TBZ2]
 )
 def test_create_tar_archive_in_root_dir(rule_runner: RuleRunner, format: ArchiveFormat) -> None:
     """Validates that a .tar archive can be created with only a filename.

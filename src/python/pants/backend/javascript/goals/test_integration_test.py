@@ -126,9 +126,7 @@ def given_package_json(
     "test_script, package_json_target",
     [
         pytest.param(
-            {"test": "NODE_OPTIONS=--experimental-vm-modules jest"},
-            "package_json()",
-            id="default",
+            {"test": "NODE_OPTIONS=--experimental-vm-modules jest"}, "package_json()", id="default"
         ),
         pytest.param(
             {"jest-test": "NODE_OPTIONS=--experimental-vm-modules jest"},
