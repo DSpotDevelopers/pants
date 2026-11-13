@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import textwrap
 from pathlib import Path
 from typing import cast
@@ -381,6 +382,73 @@ def test_workspace_tests_run_only_selected_files_and_refresh_between_sessions() 
     runner.set_options(options, env_inherit={"PATH"})
     second = runner.request(TestResult, [request])
     assert second.exit_code == 1, "workspace results must not be reused across sessions"
+
+
+def test_workspace_tests_install_their_package_in_every_session() -> None:
+    # In a workspace environment the install's result is its node_modules in the checkout, not a digest the test
+    # reads: a new checkout under a warm process cache must still get them installed.
+    runner = RuleRunner(
+        rules=[
+            *test.rules(),
+            get_filtered_environment,
+            QueryRule(TestResult, [JSTestRequest.Batch]),
+        ],
+        target_types=[
+            PackageJsonTarget,
+            TypeScriptTestsGeneratorTarget,
+            TypeScriptTestTarget,
+            LocalWorkspaceEnvironmentTarget,
+        ],
+        inherent_environment=EnvironmentName("workspace"),
+        isolated_local_store=True,
+    )
+    options = [
+        "--nodejs-package-manager=pnpm",
+        "--nodejs-package-managers={'pnpm': '9.15.4'}",
+        "--environments-preview-names={'workspace': '//:workspace'}",
+    ]
+    runner.set_options(options, env_inherit={"PATH"})
+    runner.write_files(
+        {
+            "BUILD": "package_json(name='package')\ntypescript_tests(name='tests', environment='workspace')\n"
+            "experimental_workspace_environment(name='workspace')\n",
+            "package.json": json.dumps(
+                {
+                    "name": "workspace-tests",
+                    "version": "1.0.0",
+                    "type": "module",
+                    "scripts": {"test": "node --test"},
+                    "dependencies": {"dep": "link:./dep"},
+                }
+            ),
+            "pnpm-lock.yaml": "lockfileVersion: '9.0'\nsettings:\n  autoInstallPeers: true\n"
+            "  excludeLinksFromLockfile: false\nimporters:\n  .:\n    dependencies:\n      dep:\n"
+            "        specifier: link:./dep\n        version: link:dep\n",
+            "dep/package.json": json.dumps(
+                {"name": "dep", "version": "1.0.0", "type": "module", "main": "index.js"}
+            ),
+            "dep/index.js": "export const value = 42;\n",
+            "selected.test.ts": "import { test } from 'node:test';\n"
+            "import assert from 'node:assert/strict';\n"
+            "import { value } from 'dep';\n"
+            "test('installed dependency', () => assert.equal(value, 42));\n",
+        }
+    )
+    target = runner.get_target(
+        Address("", target_name="tests", relative_file_path="selected.test.ts")
+    )
+    package = runner.get_target(
+        Address("", target_name="package", generated_name="workspace-tests")
+    )
+    request = given_request_for(target, package=package)
+    first = runner.request(TestResult, [request])
+    assert first.exit_code == 0, first.stdout_bytes + first.stderr_bytes
+
+    # A fresh checkout: same sources, same process cache, no node_modules yet.
+    shutil.rmtree(Path(runner.build_root, "node_modules"))
+    runner.set_options(options, env_inherit={"PATH"})
+    second = runner.request(TestResult, [request])
+    assert second.exit_code == 0, second.stdout_bytes + second.stderr_bytes
 
 
 def test_typescript_test_files(
