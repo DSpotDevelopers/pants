@@ -4,7 +4,7 @@ This is official Pants **2.33.2** plus the reviewed fixes below. Every fix has a
 Upstream submission is optional and belongs only to the owner; it is not a build or approval gate.
 Apart from the version label and this file, nothing else differs from the `release_2.33.2` tag.
 
-Version: `2.33.2+dspot.7`. A repository pins it like any Pants version: `pants_version = "2.33.2+dspot.7"` in
+Version: `2.33.2+dspot.8`. A repository pins it like any Pants version: `pants_version = "2.33.2+dspot.8"` in
 `pants.toml`. The stock scie-pants launcher fetches it through `PANTS_BOOTSTRAP_URLS`, set in the repository's
 committed `.pants.bootstrap`. There's no wrapper script.
 
@@ -19,6 +19,8 @@ committed `.pants.bootstrap`. There's no wrapper script.
 | 7 | TypeScript check builds the configs owning the selected sources, with their declared project references, rather than every member of a Node resolve | DSpotDevelopers/pants#2, approved at `3fcae484e9`, and #3 (no snapshot of the installed resolve in config discovery), approved at `097d64486b`; coordinator/owner owns external review and submission | Drop it when a Pants release we pin separates TypeScript programs from Node resolves. |
 | 8 | TypeScript check consumes the ordinary, generated and packaged data dependencies of its active tsconfigs; package-shell targets build through package, never source codegen; output validation matches captured names without walking dependency links | DSpotDevelopers/pants#4, approved at `576f692d81524e907570921aa28bedfb26430f3c`; upstream preparation is parked under the owner's correction | Drop it when a pinned Pants release carries equivalent config-input and package/source separation. |
 
+| 9 | JS/TS/TSX tests select existing execution environments; workspace-safe cache policy, archive extraction and Corepack paths | DSpotDevelopers/pants#5, approved at `455825ce1e72db3777a24e7d7aa6b62de12acadb` | Unblocks Pipeline 200 criterion 4; drop when a pinned upstream release provides equivalent execution-environment, bootstrap-path and cache behavior. |
+
 ## Rules for this branch
 
 - Fixes are reviewed on this fork and recorded above with their removal conditions. The owner clarified on
@@ -27,7 +29,7 @@ committed `.pants.bootstrap`. There's no wrapper script.
   immutable release (immutable releases were enabled on this fork after `+dspot.1` was published). `+dspot.3` adds
   patches 3 and 4; `+dspot.4` adds patch 5; `+dspot.5` adds patches 6 and 7; `+dspot.6` corrects them (#3: config
   discovery inventories sources and configs, never the installed resolve's links). `+dspot.7` adds patch 8
-  from the approved config-input and package/output-validation fix. Every release from `+dspot.2` on is
+  from the approved config-input and package/output-validation fix. `+dspot.8` adds patch 9. Every release from `+dspot.2` on is
   immutable: the launcher can't check the PEX's hash.
 - When a patch's upstream PR is released, the next build drops it and bumps the `+dspot.N` label. When none is left,
   repositories go back to the plain official version and this branch is retired.
@@ -50,18 +52,20 @@ committed `.pants.bootstrap`. There's no wrapper script.
   selected config data and package inputs, package/source separation and link-safe output validation.
 - This release commit changes only this record and `src/python/pants/VERSION`.
 
-## Proposed: JavaScript test execution environments
+## JavaScript test execution environments (patch 9)
 
-Branch `fix/javascript-workspace-tests` proposes environment fields on JavaScript, TypeScript and TSX tests and
-their generators. Their field set carries that choice into the stock test goal, which uses the environment's
-cache policy: workspace results last one session. Archive extraction and Corepack preparation address their
-inputs and outputs inside the process sandbox even when the selected environment executes commands in the
-checkout. The package's own test script still receives exactly the selected files.
+DSpotDevelopers/pants#5 was approved at `455825ce1e72db3777a24e7d7aa6b62de12acadb` and merged with a
+merge commit at `4795dd5e5a49f350ddf9b6d7716e2e0cd086a1b7`. JavaScript, TypeScript and TSX tests and
+their generators carry the existing execution environment into the stock test goal. Workspace results use
+that environment's session cache policy, and archive extraction and Corepack preparation address their
+sandbox inputs and outputs even when commands execute in the checkout. The package test script still receives
+exactly the selected files.
 
-This unblocks company criterion 4 (BUILD files not from tailor): ordinary tailor-generated test targets can
-replace handwritten test-as-source declarations once a reviewed build is consumed.
+This unblocks Pipeline 200 criterion 4 (BUILD files not from tailor): ordinary tailor-generated test targets can
+replace handwritten test-as-source declarations and folder-runner inventories once this build is consumed.
+Remove patch 9 when a pinned Pants release provides equivalent test-environment selection, sandbox bootstrap
+paths and workspace result-cache behavior. Only the owner controls upstream submission.
 
-This proposal does not change the published version above. It needs fork review before a new build can include
-it; the owner controls any upstream submission. Its exit is the same as the other fixes: drop it when a pinned
-Pants release provides equivalent test-environment, bootstrap-path and cache behavior. A company checkout can
-then consume that reviewed build and replace its test-as-source declarations with the ordinary tailor targets.
+This release adds patch 9 to immutable `2.33.2+dspot.7`. Its Rust and native-bootstrap source trees are
+unchanged, so the four native binaries are reused byte for byte from that release's checksum-verified PEX.
+The Python distribution and PEX are built from this source using stock Pants packaging targets.
