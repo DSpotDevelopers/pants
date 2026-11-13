@@ -16,9 +16,29 @@ from pants.backend.javascript.package_json import OwningNodePackage, OwningNodeP
 from pants.backend.javascript.target_types import (
     JSTestBatchCompatibilityTagField,
     JSTestExtraEnvVarsField,
+    JSTestTarget,
 )
+from pants.backend.tsx.target_types import TSXTestTarget
+from pants.backend.typescript.target_types import TypeScriptTestTarget
 from pants.build_graph.address import Address
+from pants.engine.target import Target
 from pants.testutil.rule_runner import run_rule_with_mocks
+
+
+@pytest.mark.parametrize(
+    "target_type, filename",
+    [
+        (JSTestTarget, "runner.test.js"),
+        (TypeScriptTestTarget, "runner.test.ts"),
+        (TSXTestTarget, "runner.test.tsx"),
+    ],
+)
+def test_test_targets_select_their_execution_environment(
+    target_type: type[Target], filename: str
+) -> None:
+    target = target_type({"source": filename, "environment": "workspace"}, Address("tests"))
+    field_set = JSTestFieldSet.create(target)
+    assert field_set.environment.value == "workspace"
 
 
 def given_field_set(

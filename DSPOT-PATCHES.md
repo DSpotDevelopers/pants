@@ -49,3 +49,19 @@ committed `.pants.bootstrap`. There's no wrapper script.
 - Patch 8 was merged as `1c86a5a475cfe98fba5e0b6bfdc2c241010b089e` and is the approved source of DSpotDevelopers/pants#4 at `576f692d81524e907570921aa28bedfb26430f3c`:
   selected config data and package inputs, package/source separation and link-safe output validation.
 - This release commit changes only this record and `src/python/pants/VERSION`.
+
+## Proposed: JavaScript test execution environments
+
+Branch `fix/javascript-workspace-tests` proposes environment fields on JavaScript, TypeScript and TSX tests and
+their generators. Their field set carries that choice into the stock test goal, which uses the environment's
+cache policy: workspace results last one session. Archive extraction and Corepack preparation address their
+inputs and outputs inside the process sandbox even when the selected environment executes commands in the
+checkout. The package's own test script still receives exactly the selected files.
+
+This unblocks company criterion 4 (BUILD files not from tailor): ordinary tailor-generated test targets can
+replace handwritten test-as-source declarations once a reviewed build is consumed.
+
+This proposal does not change the published version above. It needs fork review before a new build can include
+it; the owner controls any upstream submission. Its exit is the same as the other fixes: drop it when a pinned
+Pants release provides equivalent test-environment, bootstrap-path and cache behavior. A company checkout can
+then consume that reviewed build and replace its test-as-source declarations with the ordinary tailor targets.

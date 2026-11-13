@@ -347,7 +347,7 @@ class NodeJSProcessEnvironment:
         return {
             **extras,
             "PATH": os.pathsep.join(path),
-            "npm_config_cache": self.npm_config_cache,  # Normally stored at ~/.npm,
+            "npm_config_cache": os.path.join("{chroot}", self.npm_config_cache),
             "COREPACK_HOME": os.path.join("{chroot}", self.corepack_home),
             **self.corepack_env_vars,
         }
@@ -388,7 +388,7 @@ async def add_corepack_shims_to_digest(
                     "pnpm",
                     "yarn",
                     "--install-directory",
-                    "._corepack",
+                    os.path.join("{chroot}", "._corepack"),
                 ),
                 input_digest=input_digest,
                 immutable_input_digests={**tool_shims.immutable_input_digests},
@@ -397,7 +397,7 @@ async def add_corepack_shims_to_digest(
                 level=LogLevel.DEBUG,
                 env={
                     "PATH": f"{tool_shims.path_component}:{none_immutable_binary_path}",
-                    "COREPACK_HOME": "._corepack_home",
+                    "COREPACK_HOME": os.path.join("{chroot}", "._corepack_home"),
                     **corepack_env_vars,
                 },
             )
