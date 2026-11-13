@@ -2,17 +2,20 @@
 # Licensed under the Apache License, Version 2.0 (see LICENSE).
 from __future__ import annotations
 
+import dataclasses
 import os.path
 from collections.abc import Iterable
 from dataclasses import dataclass
 
 from pants.backend.javascript import nodejs_project_environment
 from pants.backend.javascript.dependency_inference.rules import rules as dependency_inference_rules
+from pants.backend.javascript.nodejs_project import NodeJSProject
 from pants.backend.javascript.nodejs_project_environment import (
     NodeJsProjectEnvironment,
     NodeJsProjectEnvironmentProcess,
     NodeJSProjectEnvironmentRequest,
     get_nodejs_environment,
+    setup_nodejs_project_environment_process,
 )
 from pants.backend.javascript.package_json import (
     NodePackageNameField,
@@ -23,6 +26,7 @@ from pants.backend.javascript.package_manager import PackageManager
 from pants.backend.javascript.subsystems import nodejs
 from pants.backend.javascript.target_types import JSRuntimeSourceField
 from pants.build_graph.address import Address
+from pants.core.environments.target_types import EnvironmentTarget
 from pants.core.target_types import FileSourceField, ResourceSourceField
 from pants.core.util_rules.source_files import (
     SourceFiles,
@@ -32,7 +36,12 @@ from pants.core.util_rules.source_files import (
 from pants.engine.internals.graph import transitive_targets
 from pants.engine.internals.native_engine import AddPrefix, Digest, MergeDigests
 from pants.engine.intrinsics import add_prefix, merge_digests
-from pants.engine.process import fallible_to_exec_result_or_raise
+from pants.engine.process import (
+    Process,
+    ProcessCacheScope,
+    execute_process_or_raise,
+    fallible_to_exec_result_or_raise,
+)
 from pants.engine.rules import Rule, collect_rules, implicitly, rule
 from pants.engine.target import SourcesField, Target, TransitiveTargetsRequest
 from pants.engine.unions import UnionMembership, UnionRule
@@ -82,11 +91,46 @@ async def _get_relevant_source_files(
     )
 
 
+@dataclass(frozen=True)
+class WorkspaceNodeProjectInstallRequest:
+    project: NodeJSProject
+
+
+@dataclass(frozen=True)
+class WorkspaceNodeProjectInstalled:
+    project: NodeJSProject
+
+
+@rule
+async def install_node_project_in_workspace(
+    req: WorkspaceNodeProjectInstallRequest, environment: EnvironmentTarget
+) -> WorkspaceNodeProjectInstalled:
+    """In a workspace environment, install the whole project into the checkout, once per session.
+
+    The install's result there is the project's node_modules in the checkout, which processes read in place; no
+    digest of it is materialized. So it is never reused from the process cache (a new checkout under a warm cache
+    would get no node_modules), and it is one install of the project, not one per package: every package of a
+    project shares its node_modules tree, and concurrent installs into one tree race.
+    """
+    process = await setup_nodejs_project_environment_process(
+        NodeJsProjectEnvironmentProcess(
+            NodeJsProjectEnvironment.from_root(req.project),
+            req.project.immutable_install_args,
+            description=f"Installing the Node.js project at {req.project.root_dir or '.'} in the workspace.",
+        ),
+        **implicitly(),
+    )
+    process = dataclasses.replace(process, cache_scope=environment.default_cache_scope)
+    await execute_process_or_raise(**implicitly({process: Process}))
+    return WorkspaceNodeProjectInstalled(req.project)
+
+
 @rule
 async def install_node_packages_for_address(
     req: InstalledNodePackageRequest,
     union_membership: UnionMembership,
     nodejs: nodejs.NodeJS,
+    environment: EnvironmentTarget,
 ) -> InstalledNodePackage:
     project_env = await get_nodejs_environment(NodeJSProjectEnvironmentRequest(req.address))
     target = project_env.ensure_target()
@@ -99,6 +143,12 @@ async def install_node_packages_for_address(
         with_js=False,
     )
     package_digest = source_files.snapshot.digest
+
+    if environment.default_cache_scope == ProcessCacheScope.PER_SESSION:
+        await install_node_project_in_workspace(
+            WorkspaceNodeProjectInstallRequest(project_env.project), **implicitly()
+        )
+        return InstalledNodePackage(project_env, digest=package_digest)
 
     install_result = await fallible_to_exec_result_or_raise(
         **implicitly(
