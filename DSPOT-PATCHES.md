@@ -20,6 +20,7 @@ committed `.pants.bootstrap`. There's no wrapper script.
 | 8 | TypeScript check consumes the ordinary, generated and packaged data dependencies of its active tsconfigs; package-shell targets build through package, never source codegen; output validation matches captured names without walking dependency links | DSpotDevelopers/pants#4, approved at `576f692d81524e907570921aa28bedfb26430f3c`; upstream preparation is parked under the owner's correction | Drop it when a pinned Pants release carries equivalent config-input and package/source separation. |
 
 | 9 | JS/TS/TSX tests select existing execution environments; workspace-safe cache policy, archive extraction and Corepack paths | DSpotDevelopers/pants#5, approved at `455825ce1e72db3777a24e7d7aa6b62de12acadb` | Unblocks Pipeline 200 criterion 4; drop when a pinned upstream release provides equivalent execution-environment, bootstrap-path and cache behavior. |
+| 10 | In a workspace environment, a Node.js project is installed into the checkout once per session (one install of the project, never reused from the process cache), so a new checkout under a warm cache still gets its node_modules | This branch's follow-up to patch 9 (its PR on this fork) | Drop it with patch 9, when a pinned upstream release installs workspace-environment Node.js projects per session. |
 
 ## Rules for this branch
 
@@ -69,3 +70,12 @@ paths and workspace result-cache behavior. Only the owner controls upstream subm
 This release adds patch 9 to immutable `2.33.2+dspot.7`. Its Rust and native-bootstrap source trees are
 unchanged, so the four native binaries are reused byte for byte from that release's checksum-verified PEX.
 The Python distribution and PEX are built from this source using stock Pants packaging targets.
+
+## Workspace installs (patch 10)
+
+Patch 9 gave workspace test results the environment's session cache policy, but not the install those tests read.
+There the install's result is the project's `node_modules` in the checkout, which processes read in place, so a
+cached install skipped in a new checkout leaves the tests with no `node_modules`. In a workspace environment the
+project is now installed once per session, as one install of the whole project: every package of a project shares
+its `node_modules` tree, and concurrent per-package installs into one tree race. Sandboxed environments keep the
+cached per-package install and its captured `node_modules` digest unchanged.
