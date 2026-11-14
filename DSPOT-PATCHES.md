@@ -4,7 +4,7 @@ This is official Pants **2.33.2** plus the reviewed fixes below. Every fix has a
 Upstream submission is optional and belongs only to the owner; it is not a build or approval gate.
 Apart from the version label and this file, nothing else differs from the `release_2.33.2` tag.
 
-Version: `2.33.2+dspot.8`. A repository pins it like any Pants version: `pants_version = "2.33.2+dspot.8"` in
+Version: `2.33.2+dspot.9`. A repository pins it like any Pants version: `pants_version = "2.33.2+dspot.9"` in
 `pants.toml`. The stock scie-pants launcher fetches it through `PANTS_BOOTSTRAP_URLS`, set in the repository's
 committed `.pants.bootstrap`. There's no wrapper script.
 
@@ -30,7 +30,7 @@ committed `.pants.bootstrap`. There's no wrapper script.
   immutable release (immutable releases were enabled on this fork after `+dspot.1` was published). `+dspot.3` adds
   patches 3 and 4; `+dspot.4` adds patch 5; `+dspot.5` adds patches 6 and 7; `+dspot.6` corrects them (#3: config
   discovery inventories sources and configs, never the installed resolve's links). `+dspot.7` adds patch 8
-  from the approved config-input and package/output-validation fix. `+dspot.8` adds patch 9. Every release from `+dspot.2` on is
+  from the approved config-input and package/output-validation fix. `+dspot.8` adds patch 9; `+dspot.9` adds patch 10. Every release from `+dspot.2` on is
   immutable: the launcher can't check the PEX's hash.
 - When a patch's upstream PR is released, the next build drops it and bumps the `+dspot.N` label. When none is left,
   repositories go back to the plain official version and this branch is retired.
@@ -51,6 +51,9 @@ committed `.pants.bootstrap`. There's no wrapper script.
   (the pnpm workspace link cycle).
 - Patch 8 was merged as `1c86a5a475cfe98fba5e0b6bfdc2c241010b089e` and is the approved source of DSpotDevelopers/pants#4 at `576f692d81524e907570921aa28bedfb26430f3c`:
   selected config data and package inputs, package/source separation and link-safe output validation.
+- Patch 9 was merged as `4795dd5e5a49f350ddf9b6d7716e2e0cd086a1b7` (DSpotDevelopers/pants#5).
+- Patch 10 was merged as `0ddb1517a9339087227fd4fa7dcb414b7c420a71` and is the approved source of DSpotDevelopers/pants#6 at `d58ac2fc71503d15ea6a9c8aaa079f04e2bd1977`:
+  a workspace environment installs its Node.js project once per session.
 - This release commit changes only this record and `src/python/pants/VERSION`.
 
 ## JavaScript test execution environments (patch 9)
