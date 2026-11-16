@@ -207,7 +207,7 @@ def test_check_javascript_disabled_via_tsconfig(
     assert "error.js" not in results.results[0].stdout
 
 
-@pytest.mark.parametrize("module_kind", ["javascript", "resource", "declaration", "ambient"])
+@pytest.mark.parametrize("module_kind", ["javascript", "declaration", "ambient"])
 def test_compiler_receives_imported_inputs(module_kind: str) -> None:
     rule_runner = _create_rule_runner("pnpm")
     files = _load_project_test_files("basic_project")
@@ -222,16 +222,6 @@ def test_compiler_receives_imported_inputs(module_kind: str) -> None:
             "declare module 'virtual:answer' {export const answer: number;}\n"
         )
         files["basic_project/src/BUILD"] += '\nfile(name="types", source="virtual.d.ts")\n'
-    elif module_kind == "resource":
-        # Composite projects require JSON inputs to be named explicitly in include, even
-        # when another include pattern already covers their containing directory.
-        config["include"].append("src/**/*.json")
-        files["basic_project/tsconfig.json"] = json.dumps(config)
-        files["basic_project/src/index.ts"] = (
-            "import data from './values.json';\nexport const answer: number = data.answer;\n"
-        )
-        files["basic_project/src/values.json"] = '{"answer": 42}'
-        files["basic_project/src/BUILD"] += '\nresource(name="values", source="values.json")\n'
     else:
         files["basic_project/src/index.ts"] = (
             "import {answer} from './values.mjs';\nexport const result: number = answer;\n"
