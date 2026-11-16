@@ -19,7 +19,7 @@ from pants.backend.javascript.package_json import (
     all_package_json,
     find_owning_package,
 )
-from pants.backend.javascript.resolve import ChosenNodeResolve
+from pants.backend.javascript.resolve import ChosenNodeResolve, RequestNodeResolve, resolve_for_package
 from pants.backend.javascript.subsystems.nodejs_tool import NodeJSToolRequest, prepare_tool_process
 from pants.backend.javascript.target_types import JS_FILE_EXTENSIONS, JSRuntimeSourceField
 from pants.backend.typescript.subsystem import TypeScriptSubsystem
@@ -30,6 +30,7 @@ from pants.backend.typescript.target_types import (
 )
 from pants.backend.typescript.tsconfig import AllTSConfigs, TSConfig, construct_effective_ts_configs
 from pants.base.build_root import BuildRoot
+from pants.build_graph.address import Address
 from pants.core.goals.check import CheckRequest, CheckResult, CheckResults, CheckSubsystem
 from pants.core.goals.package import (
     EnvironmentAwarePackageRequest,
@@ -403,6 +404,7 @@ async def _select_tsconfig_programs(
     selected_files: tuple[str, ...],
     asset_paths: tuple[str, ...],
     global_options: GlobalOptions,
+    project_resolve: ChosenNodeResolve,
 ) -> TypeScriptPrograms | CheckResult:
     # A Node resolve supplies dependencies, not a TypeScript compilation boundary.
     # TypeScript owns files/include/exclude/extends semantics and named project references.
@@ -451,7 +453,7 @@ async def _select_tsconfig_programs(
             level=LogLevel.DEBUG,
         )
         process = await prepare_tool_process(
-            replace(request, resolve=ChosenNodeResolve(project).resolve_name), **implicitly()
+            replace(request, resolve=project_resolve.resolve_name), **implicitly()
         )
         # --showConfig enumerates filenames; it does not parse source contents. Supply
         # empty candidate files for this discovery only, without hydrating their blobs.
@@ -519,13 +521,12 @@ async def _prepare_tsc_build_process(
     project_targets: list[Target],
     build_root: BuildRoot,
     config_paths: tuple[str, ...],
+    project_resolve: ChosenNodeResolve,
 ) -> Process:
     tsc_args = ("--build", *config_paths, *subsystem.extra_build_args)
     tsc_wrapper_filename = "__tsc_wrapper.sh"
     named_cache_local_dir = "typescript_cache"
     named_cache_sandbox_mount_dir = "._tsc_cache"
-
-    project_resolve = ChosenNodeResolve(project)
 
     script_digest = await create_tsc_wrapper_script(
         CreateTscWrapperScriptRequest(
@@ -594,6 +595,12 @@ async def _typecheck_single_project(
             partition_description=f"TypeScript check on {project.root_dir} (no targets)",
         )
 
+    project_resolve = (
+        await resolve_for_package(RequestNodeResolve(Address(project.root_dir)), **implicitly())
+        if project.root_dir
+        else ChosenNodeResolve(project)
+    )
+
     # Imported assets come from the inferred dependency closure. Unimported declarations
     # are discovered by their filenames below, then hydrated only for active programs.
     all_workspace_sources = await _hydrate_project_sources(project_targets)
@@ -624,6 +631,7 @@ async def _typecheck_single_project(
         tuple(field_set.sources.file_path for field_set in field_sets),
         tuple(assets),
         global_options,
+        project_resolve,
     )
     if isinstance(selection, CheckResult):
         return selection
@@ -698,6 +706,7 @@ async def _typecheck_single_project(
         selected_targets,
         build_root,
         config_paths,
+        project_resolve,
     )
 
     process = replace(process, cache_scope=check_subsystem.default_process_cache_scope)
