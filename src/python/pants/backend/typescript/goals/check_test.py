@@ -555,6 +555,8 @@ def test_typescript_config_data_dependencies(generated: str, type_error: bool) -
     }
     if generated == "file":
         files["vendor/sdk/index.d.ts"] = declaration
+        files["src/BUILD"] = "typescript_sources(dependencies=['//:sdk'])"
+        files["BUILD"] = files["BUILD"].replace(", dependencies=[':sdk']", "")
     runner.write_files(files)
     target = runner.get_target(Address("src", relative_file_path="index.ts"))
     result = runner.request(
