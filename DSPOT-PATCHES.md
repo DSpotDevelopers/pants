@@ -14,7 +14,7 @@ committed `.pants.bootstrap`. There's no wrapper script.
 | 2 | JS inference finds the owner of an imported non-module file, such as `./x.css` or `./rows.json` | Branch `dspot/js-infer-non-js-files` on this fork, on Pants main; the issue and PR are posted by a person (Pants requires human-written text) | Drop it when a Pants release we pin contains the upstream fix. |
 | 3 | JS inference reads a bundler query's file: `./App.tsx?raw`, `./logo.svg?url` | Branch `dspot/js-infer-bundler-query` (on patch 2's), posted the same way | Drop it when a Pants release we pin contains the upstream fix. |
 | 4 | A TypeScript `.js` specifier infers the source it compiles from: `./errors.js` -> `errors.ts`/`.tsx`/`.d.ts`, `./View.jsx` -> `View.tsx` | Branch `dspot/js-infer-ts-js-specifier` (on patch 3's), posted the same way | Drop it when a Pants release we pin contains the upstream fix. |
-| 5 | TypeScript check keeps the discovered named/root Node project and a sandbox-relative wrapper path (`9b4d1aed7`, `cfe58a301`) | Branch `dspot/ts-check-named-root-project` on this fork, on Pants main (60df85631); the issue and PR are posted by a person, as for patches 2-4 | Drop it when a Pants release we pin contains the equivalent named-project/root-wrapper fix. |
+| 5 | TypeScript check keeps the repository-root Node project and a sandbox-relative root wrapper path (`9b4d1aed7`, `cfe58a301`) | Root-project support retained; subfolder projects use stock resolve lookup and unnamed package targets | Drop it when a Pants release we pin contains equivalent root-project/root-wrapper support. |
 | 6 | Preserve TypeScript compiler inputs: imported JavaScript and exported declarations | DSpotDevelopers/pants#2, approved at `3fcae484e9`, and #3 (no snapshot of the installed resolve in config discovery), approved at `097d64486b`; upstream's 2.34 branch includes transitive compiler inputs | Remove the compiler-input copy at the next 2.34 pin, validating the focused compiler cases against upstream's transitive source hydration. Keep config-program selection under patch 7 until upstream provides it. |
 | 7 | TypeScript check builds the configs owning the selected sources, with their declared project references, rather than every member of a Node resolve | DSpotDevelopers/pants#2, approved at `3fcae484e9`, and #3 (no snapshot of the installed resolve in config discovery), approved at `097d64486b`; coordinator/owner owns external review and submission | Drop it when a Pants release we pin separates TypeScript programs from Node resolves. |
 | 8 | TypeScript check consumes generated and packaged data dependencies of its active tsconfigs; package-shell targets build through package, never source codegen; output validation matches captured names without walking dependency links | DSpotDevelopers/pants#4, approved at `576f692d81524e907570921aa28bedfb26430f3c`; upstream preparation is parked under the owner's correction | Drop it when a pinned Pants release carries equivalent generated config-input and package/source separation. |
@@ -28,6 +28,9 @@ Module-specific declarations use stock `file` targets and explicit dependencies 
 default globs and module-extension inference no longer carry the module-specific additions.
 Static tsconfig data uses the same stock file dependency path. Patch 8 collects generated sources and
 packages only; it no longer stages static file/resource data reached solely through a config owner.
+Subfolder TypeScript project roots use unnamed `package_json()` targets and stock resolve lookup.
+The repository-root case retains its discovered resolve and relative wrapper path: the stock empty-path
+lookup and leading-slash wrapper filename do not provide a working root-project path in this release.
 
 ## Rules for this branch
 

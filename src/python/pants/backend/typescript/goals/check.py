@@ -19,7 +19,11 @@ from pants.backend.javascript.package_json import (
     all_package_json,
     find_owning_package,
 )
-from pants.backend.javascript.resolve import ChosenNodeResolve, RequestNodeResolve, resolve_for_package
+from pants.backend.javascript.resolve import (
+    ChosenNodeResolve,
+    RequestNodeResolve,
+    resolve_for_package,
+)
 from pants.backend.javascript.subsystems.nodejs_tool import NodeJSToolRequest, prepare_tool_process
 from pants.backend.javascript.target_types import JS_FILE_EXTENSIONS, JSRuntimeSourceField
 from pants.backend.typescript.subsystem import TypeScriptSubsystem
