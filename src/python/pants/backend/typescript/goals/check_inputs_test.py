@@ -129,6 +129,40 @@ JS_TYPE_ERROR_FILE_NUMBER_TO_STRING = (
 )
 
 
+def test_compiler_receives_declared_package_export_data() -> None:
+    runner = _create_rule_runner("pnpm")
+    files = _load_project_test_files("basic_project")
+    package = json.loads(files["basic_project/package.json"])
+    package["exports"] = {"./schema": "./schema.json"}
+    files["basic_project/package.json"] = json.dumps(package)
+    files["basic_project/BUILD"] = (
+        'package_json(dependencies=[":schema"])\nfile(name="schema", source="schema.json")\n'
+    )
+    config = json.loads(files["basic_project/tsconfig.json"])
+    config["compilerOptions"].update(
+        module="NodeNext", moduleResolution="NodeNext", rootDir=".", resolveJsonModule=True
+    )
+    config["include"].append("schema.json")
+    files["basic_project/tsconfig.json"] = json.dumps(config)
+    files["basic_project/schema.json"] = '{"answer":42}'
+    source = (
+        f"import schema from '{package['name']}/schema' with {{type:'json'}};\n"
+        "export const answer: number = schema.answer;\n"
+    )
+    files["basic_project/src/index.ts"] = source
+    runner.write_files(files)
+    target = runner.get_target(
+        Address("basic_project/src", target_name="ts_sources", relative_file_path="index.ts")
+    )
+    request = TypeScriptCheckRequest([TypeScriptCheckFieldSet.create(target)])
+    result = runner.request(CheckResults, [request]).results[0]
+    assert result.exit_code == 0, result.stdout + result.stderr
+    runner.write_files({"basic_project/src/index.ts": source.replace(": number", ": string")})
+    result = runner.request(CheckResults, [request]).results[0]
+    assert result.exit_code != 0
+    assert "TS2322" in result.stdout
+
+
 def test_setting_typescript_version_emits_warning(
     basic_rule_runner: RuleRunnerWithProjectAndPackageManager, caplog
 ) -> None:

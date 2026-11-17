@@ -33,7 +33,12 @@ from pants.core.target_types import (
 from pants.core.util_rules.unowned_dependency_behavior import UnownedDependencyError
 from pants.engine.internals.graph import Owners, OwnersRequest
 from pants.engine.rules import QueryRule
-from pants.engine.target import InferredDependencies, Target, TransitiveTargets, TransitiveTargetsRequest
+from pants.engine.target import (
+    InferredDependencies,
+    Target,
+    TransitiveTargets,
+    TransitiveTargetsRequest,
+)
 from pants.testutil.rule_runner import RuleRunner, engine_error
 from pants.util.ordered_set import FrozenOrderedSet
 
