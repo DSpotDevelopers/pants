@@ -670,6 +670,15 @@ async def run_prepared_adhoc_process(
         if result.stderr:
             logger.warning(result.stderr.decode())
 
+    # Failed outputs cannot be consumed. Let the caller report the process error before
+    # output validation or prefix removal can replace its exit code and stderr.
+    if result.exit_code != 0:
+        return FallibleAdhocProcessResult(
+            process_result=result,
+            adjusted_digest=EMPTY_DIGEST,
+            description=request.description,
+        )
+
     working_directory = parse_relative_directory(request.working_directory, request.address)
 
     root_output_directory: str | None = None
