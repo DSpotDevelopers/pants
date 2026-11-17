@@ -689,4 +689,3 @@ def test_typescript_check_with_root_and_subfolder_project(project_root: str, typ
     assert results.results[0].exit_code == (1 if type_error else 0)
     if type_error:
         assert "TS2322" in results.results[0].stdout
-
