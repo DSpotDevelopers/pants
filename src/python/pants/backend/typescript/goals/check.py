@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 from dataclasses import dataclass, replace
@@ -18,7 +19,7 @@ from pants.backend.javascript.package_json import (
     all_package_json,
     find_owning_package,
 )
-from pants.backend.javascript.resolve import RequestNodeResolve, resolve_for_package
+from pants.backend.javascript.resolve import ChosenNodeResolve, RequestNodeResolve, resolve_for_package
 from pants.backend.javascript.subsystems.nodejs_tool import NodeJSToolRequest, prepare_tool_process
 from pants.backend.javascript.target_types import JSRuntimeSourceField
 from pants.backend.typescript.subsystem import TypeScriptSubsystem
@@ -48,6 +49,7 @@ from pants.engine.internals.native_engine import MergeDigests
 from pants.engine.internals.selectors import concurrently
 from pants.engine.intrinsics import (
     create_digest,
+    digest_to_snapshot,
     execute_process,
     merge_digests,
     path_globs_to_digest,
@@ -380,6 +382,130 @@ async def _prepare_compilation_input(
     return await merge_digests(MergeDigests([all_workspace_sources, config_digest]))
 
 
+@dataclass(frozen=True)
+class TypeScriptPrograms:
+    config_paths: tuple[str, ...]
+    source_files: frozenset[str]
+    config_files: tuple[str, ...]
+
+
+async def _select_tsconfig_programs(
+    project: NodeJSProject,
+    subsystem: TypeScriptSubsystem,
+    input_digest: Digest,
+    project_ts_configs: list[TSConfig],
+    selected_files: tuple[str, ...],
+    asset_paths: tuple[str, ...],
+    global_options: GlobalOptions,
+    project_resolve: ChosenNodeResolve,
+) -> TypeScriptPrograms | CheckResult:
+    # A Node resolve supplies dependencies, not a TypeScript compilation boundary.
+    # TypeScript owns files/include/exclude/extends semantics and named project references.
+    configs = {config.path: config for config in project_ts_configs}
+    defaults = sorted(
+        (
+            config
+            for config in project_ts_configs
+            if os.path.basename(config.path) == "tsconfig.json"
+        ),
+        key=lambda config: len(os.path.dirname(config.path)),
+        reverse=True,
+    )
+    pending = list(
+        dict.fromkeys(
+            next(
+                (
+                    config.path
+                    for config in defaults
+                    if Path(source).is_relative_to(os.path.dirname(config.path))
+                ),
+                os.path.join(project.root_dir, "tsconfig.json"),
+            )
+            for source in selected_files
+        )
+    )
+    program_files: dict[str, set[str]] = {}
+    references: dict[str, tuple[str, ...]] = {}
+    selected: OrderedSet[str] = OrderedSet()
+    source_paths = set(selected_files)
+    while pending:
+        path = pending.pop(0)
+        if path in program_files:
+            continue
+        relative_path = os.path.relpath(path, project.root_dir or ".")
+        # Explicit references can name configurations beyond the tsconfig*.json glob.
+        config_digest = await path_globs_to_digest(
+            PathGlobs([path], glob_match_error_behavior=GlobMatchErrorBehavior.ignore),
+            **implicitly(),
+        )
+        query_input = await merge_digests(MergeDigests([input_digest, config_digest]))
+        request = subsystem.request(
+            args=("--showConfig", "--project", relative_path),
+            input_digest=query_input,
+            description=f"Discover TypeScript program in {path}",
+            level=LogLevel.DEBUG,
+        )
+        process = await prepare_tool_process(
+            replace(request, resolve=project_resolve.resolve_name), **implicitly()
+        )
+        # --showConfig enumerates filenames; it does not parse source contents. Supply
+        # empty candidate files for this discovery only, without hydrating their blobs.
+        # Inventory only sources/configs: the installed resolve can contain cyclic pnpm
+        # workspace links. Preserve that resolve for execution without walking its links.
+        existing = await digest_to_snapshot(query_input)
+        existing_files = set(existing.files)
+        inventory = await create_digest(
+            CreateDigest(
+                [FileContent(asset, b"") for asset in asset_paths if asset not in existing_files]
+            )
+        )
+        discovery_input = await merge_digests(MergeDigests([process.input_digest, inventory]))
+        result = await execute_process(
+            replace(process, input_digest=discovery_input, working_directory=project.root_dir),
+            **implicitly(),
+        )
+        if result.exit_code:
+            return CheckResult.from_fallible_process_result(
+                result,
+                partition_description=f"TypeScript configuration {path}",
+                output_simplifier=global_options.output_simplifier(),
+            )
+        program = json.loads(result.stdout)
+        directory = os.path.dirname(path)
+        files = {
+            os.path.normpath(os.path.join(directory, file)) for file in program.get("files", ())
+        }
+        program_files[path] = files
+        if source_paths.intersection(files):
+            config = configs.get(path) or TSConfig(
+                path, out_dir=program.get("compilerOptions", {}).get("outDir")
+            )
+            config.validate_outdir()
+            selected.add(path)
+        child_configs = []
+        for reference in program.get("references", ()):
+            referenced = os.path.normpath(os.path.join(directory, reference["path"]))
+            if not referenced.endswith(".json"):
+                referenced = os.path.join(referenced, "tsconfig.json")
+            child_configs.append(referenced)
+        references[path] = tuple(child_configs)
+        pending.extend(child_configs)
+
+    # Only selected programs and their declared reference closure contribute ambient assets.
+    active: OrderedSet[str] = OrderedSet()
+    pending = list(selected)
+    while pending:
+        path = pending.pop(0)
+        if path not in active:
+            active.add(path)
+            pending.extend(references[path])
+    return TypeScriptPrograms(
+        tuple(os.path.relpath(path, project.root_dir or ".") for path in selected),
+        frozenset(file for path in active for file in program_files[path]),
+        tuple(active),
+    )
+
+
 async def _prepare_tsc_build_process(
     project: NodeJSProject,
     subsystem: TypeScriptSubsystem,
@@ -387,15 +513,13 @@ async def _prepare_tsc_build_process(
     package_output_dirs: tuple[str, ...],
     project_targets: list[Target],
     build_root: BuildRoot,
+    config_paths: tuple[str, ...],
+    project_resolve: ChosenNodeResolve,
 ) -> Process:
-    tsc_args = ("--build", *subsystem.extra_build_args)
+    tsc_args = ("--build", *config_paths, *subsystem.extra_build_args)
     tsc_wrapper_filename = "__tsc_wrapper.sh"
     named_cache_local_dir = "typescript_cache"
     named_cache_sandbox_mount_dir = "._tsc_cache"
-
-    project_resolve = await resolve_for_package(
-        RequestNodeResolve(Address(project.root_dir)), **implicitly()
-    )
 
     script_digest = await create_tsc_wrapper_script(
         CreateTscWrapperScriptRequest(
@@ -446,6 +570,7 @@ async def _typecheck_single_project(
     all_package_jsons: AllPackageJson,
     all_ts_configs: AllTSConfigs,
     build_root: BuildRoot,
+    field_sets: tuple[TypeScriptCheckFieldSet, ...],
 ) -> CheckResult:
     project_package_jsons, project_ts_configs = _collect_project_configs(
         project, all_package_jsons, all_ts_configs
@@ -475,6 +600,29 @@ async def _typecheck_single_project(
         project, project_ts_configs, Path(project.root_dir)
     )
 
+    project_resolve = await resolve_for_package(
+        RequestNodeResolve(Address(project.root_dir)), **implicitly()
+    )
+    selection = await _select_tsconfig_programs(
+        project,
+        subsystem,
+        input_digest,
+        project_ts_configs,
+        tuple(field_set.sources.file_path for field_set in field_sets),
+        (),
+        global_options,
+        project_resolve,
+    )
+    if isinstance(selection, CheckResult):
+        return selection
+    if not selection.config_paths:
+        return CheckResult(
+            exit_code=0,
+            stdout="",
+            stderr="",
+            partition_description=f"TypeScript check on {project.root_dir} (no selected program)",
+        )
+
     process = await _prepare_tsc_build_process(
         project,
         subsystem,
@@ -482,6 +630,8 @@ async def _typecheck_single_project(
         package_output_dirs,
         project_targets,
         build_root,
+        selection.config_paths,
+        project_resolve,
     )
 
     process = replace(process, cache_scope=check_subsystem.default_process_cache_scope)
@@ -524,13 +674,13 @@ async def typecheck_typescript(
         ),
     )
 
-    projects: OrderedSet[NodeJSProject] = OrderedSet()
-    for owning_package in owning_packages:
+    projects: dict[NodeJSProject, list[TypeScriptCheckFieldSet]] = {}
+    for field_set, owning_package in zip(field_sets, owning_packages):
         if owning_package.target:
             package_directory = owning_package.target.address.spec_path
             owning_project = all_projects.project_for_directory(package_directory)
             if owning_project:
-                projects.add(owning_project)
+                projects.setdefault(owning_project, []).append(field_set)
 
     project_results = await concurrently(
         _typecheck_single_project(
@@ -543,8 +693,9 @@ async def typecheck_typescript(
             all_package_jsons,
             all_ts_configs,
             build_root,
+            tuple(project_field_sets),
         )
-        for project in projects
+        for project, project_field_sets in projects.items()
     )
 
     return CheckResults(project_results, checker_name=request.tool_name, output_per_partition=False)
