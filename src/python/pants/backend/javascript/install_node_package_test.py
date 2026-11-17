@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import json
+import shutil
+from pathlib import Path
 from textwrap import dedent
 
 import pytest
@@ -18,6 +20,8 @@ from pants.backend.javascript.nodejs_project_environment import NodeJsProjectEnv
 from pants.backend.javascript.package_json import PackageJsonTarget
 from pants.backend.javascript.target_types import JSSourcesGeneratorTarget
 from pants.build_graph.address import Address
+from pants.core.environments.target_types import LocalWorkspaceEnvironmentTarget
+from pants.engine.environment import EnvironmentName
 from pants.engine.fs import DigestContents
 from pants.engine.process import Process, ProcessResult
 from pants.engine.rules import QueryRule
@@ -206,3 +210,45 @@ def test_pnpm_installs_transitive_workspace_dependencies(rule_runner: RuleRunner
     result = rule_runner.request(ProcessResult, [process])
 
     assert result.stdout == b"42\n"
+
+
+
+def test_workspace_install_is_recreated_in_a_new_session() -> None:
+    runner = RuleRunner(
+        rules=[
+            *install_node_package.rules(),
+            *package_json.rules(),
+            QueryRule(InstalledNodePackage, (InstalledNodePackageRequest,)),
+        ],
+        target_types=[PackageJsonTarget, LocalWorkspaceEnvironmentTarget],
+        inherent_environment=EnvironmentName("workspace"),
+        isolated_local_store=True,
+    )
+    options = ["--environments-preview-names={'workspace': '//:workspace'}"]
+    runner.set_options(options, env_inherit={"PATH"})
+    runner.write_files(
+        {
+            "BUILD": "package_json()\nexperimental_workspace_environment(name='workspace')\n",
+            "package.json": json.dumps(
+                {
+                    "name": "workspace-install",
+                    "version": "1.0.0",
+                    "packageManager": "pnpm@9.15.4",
+                    "dependencies": {"dep": "link:./dep"},
+                }
+            ),
+            "pnpm-lock.yaml": "lockfileVersion: '9.0'\nsettings:\n  autoInstallPeers: true\n"
+            "  excludeLinksFromLockfile: false\nimporters:\n  .:\n    dependencies:\n      dep:\n"
+            "        specifier: link:./dep\n        version: link:dep\n",
+            "dep/package.json": json.dumps({"name": "dep", "version": "1.0.0"}),
+            "dep/index.js": "module.exports = 42;\n",
+        }
+    )
+    request = InstalledNodePackageRequest(Address("", generated_name="workspace-install"))
+    runner.request(InstalledNodePackage, [request])
+    installed = Path(runner.build_root, "node_modules", "dep", "index.js")
+    assert installed.read_text() == "module.exports = 42;\n"
+    shutil.rmtree(Path(runner.build_root, "node_modules"))
+    runner.set_options(options, env_inherit={"PATH"})
+    runner.request(InstalledNodePackage, [request])
+    assert installed.read_text() == "module.exports = 42;\n"
