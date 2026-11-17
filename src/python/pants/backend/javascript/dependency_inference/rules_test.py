@@ -799,6 +799,7 @@ def test_a_js_specifier_resolves_to_the_typescript_source_it_compiles_from(
         Address("src/ts", target_name="tsx", relative_file_path="View.tsx"),
     }
 
+
 def test_a_js_specifier_with_no_js_or_typescript_file_is_still_unowned(
     rule_runner: RuleRunner,
 ) -> None:
