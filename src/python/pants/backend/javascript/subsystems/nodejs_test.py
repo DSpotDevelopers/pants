@@ -339,7 +339,7 @@ def test_get_nvm_root(env: dict[str, str], expected_directory: str | None) -> No
             {
                 "COREPACK_HOME": "{chroot}/._corepack_home",
                 "PATH": "{chroot}/shim_cache:._corepack:__node/v18",
-                "npm_config_cache": "npm_cache",
+                "npm_config_cache": "{chroot}/npm_cache",
             },
             id="no_extra_environment",
         ),
@@ -348,7 +348,7 @@ def test_get_nvm_root(env: dict[str, str], expected_directory: str | None) -> No
             {
                 "COREPACK_HOME": "{chroot}/._corepack_home",
                 "PATH": "{chroot}/shim_cache:._corepack:__node/v18",
-                "npm_config_cache": "npm_cache",
+                "npm_config_cache": "{chroot}/npm_cache",
             },
             id="empty_extra_environment",
         ),
@@ -357,7 +357,7 @@ def test_get_nvm_root(env: dict[str, str], expected_directory: str | None) -> No
             {
                 "COREPACK_HOME": "{chroot}/._corepack_home",
                 "PATH": "{chroot}/shim_cache:._corepack:__node/v18:/usr/bin/",
-                "npm_config_cache": "npm_cache",
+                "npm_config_cache": "{chroot}/npm_cache",
             },
             id="extra_environment_extends_path",
         ),
@@ -366,7 +366,7 @@ def test_get_nvm_root(env: dict[str, str], expected_directory: str | None) -> No
             {
                 "COREPACK_HOME": "{chroot}/._corepack_home",
                 "PATH": "{chroot}/shim_cache:._corepack:__node/v18:/usr/bin/",
-                "npm_config_cache": "npm_cache",
+                "npm_config_cache": "{chroot}/npm_cache",
                 "SOME_VAR": "VAR",
             },
             id="extra_environment_adds_to_environment",
@@ -376,7 +376,7 @@ def test_get_nvm_root(env: dict[str, str], expected_directory: str | None) -> No
             {
                 "COREPACK_HOME": "{chroot}/._corepack_home",
                 "PATH": "{chroot}/shim_cache:._corepack:__node/v18",
-                "npm_config_cache": "npm_cache",
+                "npm_config_cache": "{chroot}/npm_cache",
             },
             id="extra_environment_cannot_override_some_vars",
         ),
