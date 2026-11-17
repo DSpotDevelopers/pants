@@ -670,15 +670,6 @@ async def run_prepared_adhoc_process(
         if result.stderr:
             logger.warning(result.stderr.decode())
 
-    # Failed outputs cannot be consumed. Let the caller report the process error before
-    # output validation or prefix removal can replace its exit code and stderr.
-    if result.exit_code != 0:
-        return FallibleAdhocProcessResult(
-            process_result=result,
-            adjusted_digest=EMPTY_DIGEST,
-            description=request.description,
-        )
-
     working_directory = parse_relative_directory(request.working_directory, request.address)
 
     root_output_directory: str | None = None
@@ -704,14 +695,16 @@ async def run_prepared_adhoc_process(
         output_directories = [
             os.path.normpath(os.path.join(working_directory, od)) for od in output_directories
         ]
-    await check_outputs(
-        output_digest=output_digest,
-        output_files=output_files,
-        output_directories=output_directories,
-        outputs_match_error_behavior=request.outputs_match_error_behavior,
-        outputs_match_mode=request.outputs_match_conjunction,
-        address=request.address,
-    )
+    # Keep failed processes' captures, but let callers report their primary error.
+    if result.exit_code == 0:
+        await check_outputs(
+            output_digest=output_digest,
+            output_files=output_files,
+            output_directories=output_directories,
+            outputs_match_error_behavior=request.outputs_match_error_behavior,
+            outputs_match_mode=request.outputs_match_conjunction,
+            address=request.address,
+        )
 
     if extra_contents:
         if request.use_working_directory_as_base_for_output_captures:
