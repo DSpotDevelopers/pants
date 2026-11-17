@@ -4,23 +4,25 @@
 upstream workflows. Its definition belongs on the fork's default branch, `main`.
 It builds the requested source head; it never publishes a release or changes a pin.
 
-Ready release PRs targeting `dspot/**` run through `pull_request_target` using
-this trusted workflow. Only heads in DSpotDevelopers/pants may execute. The source
-jobs have read-only credentials, and checkout does not persist them. Separate
-light jobs record the result against the exact tested commit. Neither a skipped
-test job nor a successful packaging step alone can produce a successful status.
+Ready PRs, including stacked PRs targeting another change branch, run through
+`pull_request_target` using the trusted default-branch workflow. Every job requires an author association
+of OWNER, MEMBER or COLLABORATOR and a head in DSpotDevelopers/pants. A fork head
+is refused even when its author has one of those associations. Missing PR metadata
+fails closed before a runner is assigned. The source job rechecks the current PR
+association before recording a pending status.
 
-To check an existing PR without changing its approved head, dispatch the workflow
-from `main`, supplying its number:
+There is no `pull_request` or manual-dispatch entry point: the former allows the
+PR to change its workflow definition, and the latter has no PR author association.
+After this change reaches the default branch, synchronize or reopen an eligible
+PR to request a run. A rerun of an older run uses its older workflow definition;
+it does not prove this guard. Existing queued pre-guard runs likewise keep their
+original definition and need separate coordinator disposition.
 
-```console
-gh workflow run dspot-pants.yaml --repo DSpotDevelopers/pants --ref main -f pull_request=7
-```
-
-Repeat with `pull_request=8`, `9` and `10` after the reviewed bootstrap changes
-are merged to `main` and the coordinator has enabled Actions and runner access.
-The run resolves and records the current head and base before starting. The
-`DSpot Pants` status links to the run that built and tested that head.
+Only the source and result jobs can write commit statuses, and neither checks out
+PR code. The build and test jobs have only read permission; checkout does not
+persist credentials, and no repository or organization secrets are supplied to
+those jobs. A skipped test job or successful packaging alone cannot report success.
+The `DSpot Pants` status links to the run that built and tested its exact head.
 
 The build uses the company's existing `[self-hosted, linux, x64, dspot]` slots;
 focused Python suites use `slot-medium`; API bookkeeping uses `slot-cpus-1`.
