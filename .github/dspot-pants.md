@@ -17,7 +17,8 @@ from `main`, supplying its number:
 gh workflow run dspot-pants.yaml --repo DSpotDevelopers/pants --ref main -f pull_request=7
 ```
 
-Repeat with `pull_request=8` after the workflow itself is reviewed and green.
+Repeat with `pull_request=8`, `9` and `10` after the reviewed bootstrap changes
+are merged to `main` and the coordinator has enabled Actions and runner access.
 The run resolves and records the current head and base before starting. The
 `DSpot Pants` status links to the run that built and tested that head.
 
@@ -30,7 +31,19 @@ and elapsed time; cgroup peak memory is recorded in each job summary when
 available. Cold and warm timings must be read from actual runs before treating
 the runner sizing as qualified.
 
-Repository Actions must be enabled and the existing organization runner group
-must admit this fork. Keep the inherited upstream workflows disabled in the fork:
-their external runner labels and publishing/audit jobs are not this pipeline.
-Rollback is reverting this workflow; existing statuses retain their tested SHA.
+This is a fork-only CI change. Exit: upstream workflows return only if we ever
+push to upstream. The Pants patches and upstream release/generation tooling stay.
+
+The bootstrap retirement has three parts: scheduled and generated workflows,
+manual release assistants, and the cherry-picker with its CI-only smoke test and
+BUILD bindings. Actions must stay off until all three are merged and the default
+branch contains only `dspot-pants.yaml`. Do not regenerate upstream workflows on
+the fork's default branch.
+
+Only the owner may permit the first checkless bootstrap merge. After the complete
+reviewed retirement, the coordinator enables Actions, admits the existing runner
+group and confirms no GitHub-hosted job is queued. Each patch PR still requires
+approval and an actual green result on its exact head.
+
+Rollback: switch Actions off before reverting any retirement, because reverting
+restores upstream jobs. Existing statuses retain their tested SHA.
