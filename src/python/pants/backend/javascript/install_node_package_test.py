@@ -212,7 +212,6 @@ def test_pnpm_installs_transitive_workspace_dependencies(rule_runner: RuleRunner
     assert result.stdout == b"42\n"
 
 
-
 def test_workspace_install_is_recreated_in_a_new_session() -> None:
     runner = RuleRunner(
         rules=[
