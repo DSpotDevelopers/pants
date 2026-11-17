@@ -4,11 +4,11 @@
 from __future__ import annotations
 
 from pants.backend.typescript.target_types import (
-    TS_FILE_EXTENSIONS,
     TypeScriptDependenciesField,
     TypeScriptSourceField,
     TypeScriptTestSourceField,
 )
+from pants.core.environments.target_types import EnvironmentField
 from pants.core.goals.test import (
     TestExtraEnvVarsField,
     TestsBatchCompatibilityTagField,
@@ -25,7 +25,8 @@ from pants.engine.target import (
 )
 from pants.util.strutil import help_text
 
-TSX_FILE_EXTENSIONS = tuple(f"{ext}x" for ext in TS_FILE_EXTENSIONS)
+# Module-specific .mts/.cts files do not have JSX counterparts.
+TSX_FILE_EXTENSIONS = (".tsx", ".d.tsx")
 
 
 class TSXDependenciesField(TypeScriptDependenciesField):
@@ -112,6 +113,7 @@ class TSXTestTarget(Target):
         TSXTestTimeoutField,
         TSXTestExtraEnvVarsField,
         TSXTestBatchCompatibilityTagField,
+        EnvironmentField,
     )
     help = "A single TSX test file."
 
@@ -150,5 +152,6 @@ class TSXTestsGeneratorTarget(TargetFilesGenerator):
         TSXTestTimeoutField,
         TSXTestExtraEnvVarsField,
         TSXTestBatchCompatibilityTagField,
+        EnvironmentField,
     )
     help = "Generate a `tsx_test` target for each file in the `sources` field."

@@ -5,6 +5,7 @@ from pants.backend.javascript.target_types import (
     JSRuntimeSourceField,
     JSTestRuntimeSourceField,
 )
+from pants.core.environments.target_types import EnvironmentField
 from pants.core.goals.test import (
     TestExtraEnvVarsField,
     TestsBatchCompatibilityTagField,
@@ -21,7 +22,7 @@ from pants.engine.target import (
 )
 from pants.util.strutil import help_text
 
-TS_FILE_EXTENSIONS: tuple[str, ...] = (".ts", ".d.ts")
+TS_FILE_EXTENSIONS: tuple[str, ...] = (".ts", ".d.ts", ".mts", ".d.mts", ".cts", ".d.cts")
 TS_TEST_FILE_EXTENSIONS = tuple(f"*.test{ext}" for ext in TS_FILE_EXTENSIONS)
 
 
@@ -114,6 +115,7 @@ class TypeScriptTestTarget(Target):
         TypeScriptTestTimeoutField,
         TypeScriptTestExtraEnvVarsField,
         TypeScriptTestBatchCompatibilityTagField,
+        EnvironmentField,
     )
     help = "A single TypeScript test file."
 
@@ -152,5 +154,6 @@ class TypeScriptTestsGeneratorTarget(TargetFilesGenerator):
         TypeScriptTestTimeoutField,
         TypeScriptTestExtraEnvVarsField,
         TypeScriptTestBatchCompatibilityTagField,
+        EnvironmentField,
     )
     help = "Generate a `typescript_test` target for each file in the `sources` field."

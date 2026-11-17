@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from pants.core.environments.target_types import EnvironmentField
 from pants.core.goals.test import (
     TestExtraEnvVarsField,
     TestsBatchCompatibilityTagField,
@@ -125,6 +126,7 @@ class JSTestTarget(Target):
         JSTestTimeoutField,
         JSTestExtraEnvVarsField,
         JSTestBatchCompatibilityTagField,
+        EnvironmentField,
     )
     help = "A single Javascript test file."
 
@@ -163,5 +165,6 @@ class JSTestsGeneratorTarget(TargetFilesGenerator):
         JSTestTimeoutField,
         JSTestExtraEnvVarsField,
         JSTestBatchCompatibilityTagField,
+        EnvironmentField,
     )
     help = "Generate a `javascript_test` target for each file in the `sources` field."
