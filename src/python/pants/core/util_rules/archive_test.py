@@ -12,6 +12,7 @@ from typing import Literal, cast
 
 import pytest
 
+from pants.core.environments.target_types import LocalWorkspaceEnvironmentTarget
 from pants.core.util_rules import archive, system_binaries
 from pants.core.util_rules.archive import (
     CreateArchive,
@@ -19,6 +20,7 @@ from pants.core.util_rules.archive import (
     MaybeExtractArchiveRequest,
 )
 from pants.core.util_rules.system_binaries import ArchiveFormat
+from pants.engine.environment import EnvironmentName
 from pants.engine.fs import Digest, DigestContents, FileContent
 from pants.testutil.rule_runner import QueryRule, RuleRunner
 
@@ -60,6 +62,40 @@ FILES = {"foo": b"bar", "hello/world": b"Hello, World!"}
 EXPECTED_DIGEST_CONTENTS = DigestContents(
     [FileContent(name, content) for name, content in FILES.items()]
 )
+
+
+@pytest.mark.parametrize("suffix", [".zip", ".tar.gz", ".tar.xz"])
+def test_extract_archive_in_workspace(suffix: str) -> None:
+    runner = RuleRunner(
+        rules=[
+            *archive.rules(),
+            *system_binaries.rules(),
+            QueryRule(ExtractedArchive, [MaybeExtractArchiveRequest]),
+        ],
+        target_types=[LocalWorkspaceEnvironmentTarget],
+        inherent_environment=EnvironmentName("workspace"),
+        isolated_local_store=True,
+    )
+    runner.write_files({"BUILD": "experimental_workspace_environment(name='workspace')\n"})
+    runner.set_options(
+        ["--environments-preview-names={'workspace': '//:workspace'}"],
+        env_inherit={"PATH"},
+    )
+    contents = BytesIO()
+    if suffix == ".zip":
+        with zipfile.ZipFile(contents, "w") as archive_file:
+            for name, content in FILES.items():
+                archive_file.writestr(name, content)
+    else:
+        mode: Literal["w:gz", "w:xz"] = "w:gz" if suffix == ".tar.gz" else "w:xz"
+        with tarfile.open(fileobj=contents, mode=mode) as archive_file:
+            for name, content in FILES.items():
+                info = tarfile.TarInfo(name)
+                info.size = len(content)
+                archive_file.addfile(info, BytesIO(content))
+    snapshot = runner.make_snapshot({"input" + suffix: contents.getvalue()})
+    extracted = runner.request(ExtractedArchive, [MaybeExtractArchiveRequest(snapshot.digest)])
+    assert runner.request(DigestContents, [extracted.digest]) == EXPECTED_DIGEST_CONTENTS
 
 
 @pytest.mark.parametrize("compression", [zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED])
