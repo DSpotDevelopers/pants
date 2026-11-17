@@ -2,23 +2,26 @@
 # Licensed under the Apache License, Version 2.0 (see LICENSE).
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
-
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 
 from pants.base.glob_match_error_behavior import GlobMatchErrorBehavior
 from pants.build_graph.address import Address
 from pants.core.util_rules import adhoc_process_support
+from pants.core.util_rules.adhoc_process_support import _path_metadata_to_bytes
 from pants.engine.fs import (
-    CreateDigest, Digest, DigestEntries, DigestSubset, FileContent,
-    GlobExpansionConjunction, SymlinkEntry,
+    CreateDigest,
+    Digest,
+    DigestEntries,
+    DigestSubset,
+    FileContent,
+    GlobExpansionConjunction,
+    SymlinkEntry,
 )
+from pants.engine.internals.native_engine import PathMetadata, PathMetadataKind
 from pants.engine.rules import QueryRule, rule
 from pants.testutil.rule_runner import RuleRunner
-
-from pants.core.util_rules.adhoc_process_support import _path_metadata_to_bytes
-from pants.engine.internals.native_engine import PathMetadata, PathMetadataKind
 
 
 def test_path_metadata_to_bytes() -> None:
@@ -140,8 +143,15 @@ def test_captured_output_names_do_not_walk_workspace_links() -> None:
     ]
     digest = runner.request(
         Digest,
-        [CreateDigest([FileContent("first/package.json", b"{}"),
-                       FileContent("second/package.json", b"{}"), *links])],
+        [
+            CreateDigest(
+                [
+                    FileContent("first/package.json", b"{}"),
+                    FileContent("second/package.json", b"{}"),
+                    *links,
+                ]
+            )
+        ],
     )
     subset = adhoc_process_support.digest_subset_to_digest
 
