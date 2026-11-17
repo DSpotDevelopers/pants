@@ -3,14 +3,4 @@
 
 files(
     sources=["*.yaml"],
-    overrides={
-        "auto-cherry-picker.yaml": {
-            "dependencies": [
-                "//build-support/cherry_pick/package.json:support_files",
-                "//build-support/cherry_pick/package-lock.json:support_files",
-                "//build-support/cherry_pick/helper.js:support_files",
-                "//build-support/cherry_pick/make_pr.sh:support_files",
-            ]
-        }
-    },
 )
