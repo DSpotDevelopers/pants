@@ -60,6 +60,7 @@ from pants.engine.intrinsics import (
     digest_subset_to_digest,
     digest_to_snapshot,
     execute_process,
+    get_digest_entries,
     merge_digests,
     path_globs_to_paths,
     path_metadata_request,
@@ -552,10 +553,20 @@ async def check_outputs(
     if outputs_match_mode is None:
         return
 
+    # Output validation needs captured names, not contents or expanded package links.
+    # Preserve the real output digest for consumers and match against a link-free inventory.
+    entries = await get_digest_entries(output_digest)
+    inventory = await create_digest(
+        CreateDigest(
+            entry if isinstance(entry, Directory) else FileContent(entry.path, b"")
+            for entry in entries
+        )
+    )
+
     filtered_output_files_digests = await concurrently(
         digest_subset_to_digest(
             DigestSubset(
-                output_digest,
+                inventory,
                 PathGlobs(
                     [output_file],
                     glob_match_error_behavior=GlobMatchErrorBehavior.ignore,
@@ -568,7 +579,7 @@ async def check_outputs(
     filtered_output_directory_digests = await concurrently(
         digest_subset_to_digest(
             DigestSubset(
-                output_digest,
+                inventory,
                 PathGlobs(
                     [output_directory, os.path.join(output_directory, "**")],
                     glob_match_error_behavior=GlobMatchErrorBehavior.ignore,
@@ -622,7 +633,7 @@ async def check_outputs(
             return
 
         snapshot, wrapped_tgt = await concurrently(
-            digest_to_snapshot(output_digest),
+            digest_to_snapshot(inventory),
             resolve_target(
                 WrappedTargetRequest(address, "adhoc_process_support rule"), **implicitly()
             ),
@@ -641,7 +652,7 @@ async def check_outputs(
     if total_count == 0 or unused_count < total_count:
         return
     snapshot, wrapped_tgt = await concurrently(
-        digest_to_snapshot(output_digest),
+        digest_to_snapshot(inventory),
         resolve_target(WrappedTargetRequest(address, "adhoc_process_support rule"), **implicitly()),
     )
     warn_or_raise(

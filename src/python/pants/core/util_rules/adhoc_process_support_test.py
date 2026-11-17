@@ -4,6 +4,19 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
+from dataclasses import dataclass
+from unittest.mock import patch
+
+from pants.base.glob_match_error_behavior import GlobMatchErrorBehavior
+from pants.build_graph.address import Address
+from pants.core.util_rules import adhoc_process_support
+from pants.engine.fs import (
+    CreateDigest, Digest, DigestEntries, DigestSubset, FileContent,
+    GlobExpansionConjunction, SymlinkEntry,
+)
+from pants.engine.rules import QueryRule, rule
+from pants.testutil.rule_runner import RuleRunner
+
 from pants.core.util_rules.adhoc_process_support import _path_metadata_to_bytes
 from pants.engine.internals.native_engine import PathMetadata, PathMetadataKind
 
@@ -93,3 +106,52 @@ def test_path_metadata_to_bytes() -> None:
     b2 = _path_metadata_to_bytes(m2)
     assert len(b2) > 0
     assert b1 != b2
+
+
+@dataclass(frozen=True)
+class CapturedOutputNames:
+    digest: Digest
+
+
+@rule
+async def validate_captured_output_names(digest: Digest) -> CapturedOutputNames:
+    await adhoc_process_support.check_outputs(
+        digest,
+        (),
+        ("first", "second"),
+        GlobMatchErrorBehavior.error,
+        GlobExpansionConjunction.all_match,
+        Address("", target_name="package"),
+    )
+    return CapturedOutputNames(digest)
+
+
+def test_captured_output_names_do_not_walk_workspace_links() -> None:
+    runner = RuleRunner(
+        rules=[
+            *adhoc_process_support.rules(),
+            validate_captured_output_names,
+            QueryRule(CapturedOutputNames, (Digest,)),
+        ]
+    )
+    links = [
+        SymlinkEntry("first/node_modules/second", "../../second"),
+        SymlinkEntry("second/node_modules/first", "../../first"),
+    ]
+    digest = runner.request(
+        Digest,
+        [CreateDigest([FileContent("first/package.json", b"{}"),
+                       FileContent("second/package.json", b"{}"), *links])],
+    )
+    subset = adhoc_process_support.digest_subset_to_digest
+
+    async def refuse_link_traversal(request: DigestSubset) -> Digest:
+        # Refuse the unsafe old path before it can follow a reciprocal workspace cycle.
+        assert request.digest != digest, "output validation walks the captured workspace links"
+        return await subset(request)
+
+    with patch.object(adhoc_process_support, "digest_subset_to_digest", refuse_link_traversal):
+        result = runner.request(CapturedOutputNames, [digest])
+    assert result.digest == digest
+    entries = runner.request(DigestEntries, [result.digest])
+    assert set(links).issubset(entries)
