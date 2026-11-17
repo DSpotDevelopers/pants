@@ -623,6 +623,11 @@ async def _typecheck_single_project(
             partition_description=f"TypeScript check on {project.root_dir} (no selected program)",
         )
 
+    selected_configs = await path_globs_to_digest(
+        PathGlobs(selection.config_files), **implicitly()
+    )
+    input_digest = await merge_digests(MergeDigests([input_digest, selected_configs]))
+
     process = await _prepare_tsc_build_process(
         project,
         subsystem,
