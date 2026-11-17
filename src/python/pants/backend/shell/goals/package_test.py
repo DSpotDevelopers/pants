@@ -239,6 +239,58 @@ def test_outputs_match_mode_support(rule_runner: RuleRunner) -> None:
     )
 
 
+@pytest.mark.platform_specific_behavior
+@pytest.mark.parametrize(
+    "command,tools,timeout,exit_code,message",
+    [
+        ("echo producer-out; echo producer-error >&2; exit 3", ["echo"], 30, 3, "producer-error"),
+        (
+            "mkdir out; echo partial > out/file; echo producer-error >&2; exit 3",
+            ["mkdir", "echo"],
+            30,
+            3,
+            "producer-error",
+        ),
+        ("sleep 3", ["sleep"], 1, -15, "Exceeded timeout"),
+    ],
+)
+def test_failed_package_reports_process_error(
+    rule_runner: RuleRunner,
+    command: str,
+    tools: list[str],
+    timeout: int,
+    exit_code: int,
+    message: str,
+) -> None:
+    rule_runner.write_files(
+        {
+            "BUILD": dedent(
+                f"""\
+                package_shell_command(
+                    name="build",
+                    command={command!r},
+                    tools={tools!r},
+                    timeout={timeout},
+                    output_directories=["out"],
+                    root_output_directory="out",
+                    outputs_match_mode="all",
+                )
+                """
+            ),
+        }
+    )
+    target = rule_runner.get_target(Address("", target_name="build"))
+    field_set = shell_package.PackageShellCommandFieldSet.create(target)
+
+    with pytest.raises(ExecutionError) as exc_info:
+        rule_runner.request(BuiltPackage, [field_set])
+
+    error = str(exc_info.value)
+    assert f"failed with exit code {exit_code}" in error
+    assert message in error
+    assert "output globs were unused" not in error
+
+
 def test_output_path_field(rule_runner: RuleRunner) -> None:
     """Test the output_path field template behavior."""
     rule_runner.write_files(
