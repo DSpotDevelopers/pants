@@ -162,18 +162,31 @@ async def _prepare_inference_metadata(address: Address, file_path: str) -> Infer
     )
 
 
+# TypeScript resolves emitted JavaScript specifiers to their source files.
+# https://www.typescriptlang.org/docs/handbook/modules/reference.html#file-extension-substitution
+_TYPESCRIPT_SOURCES_OF_SPECIFIER = {
+    ".js": (".ts", ".tsx", ".d.ts"),
+    ".jsx": (".tsx",),
+}
+
+
 def _add_extensions(file_imports: frozenset[str], file_extensions: tuple[str, ...]) -> PathGlobs:
     extensions = file_extensions + tuple(f"/index{ext}" for ext in file_extensions)
     valid_file_extensions = set(file_extensions)
-    return PathGlobs(
-        string
-        for file_import in file_imports
-        for string in (
-            [file_import]
-            if PurePath(file_import).suffix in valid_file_extensions
-            else [f"{file_import}{ext}" for ext in extensions]
+    candidates = []
+    for file_import in file_imports:
+        suffix = PurePath(file_import).suffix
+        if suffix not in valid_file_extensions:
+            candidates.extend(f"{file_import}{ext}" for ext in extensions)
+            continue
+        candidates.append(file_import)
+        stem = file_import[: -len(suffix)]
+        candidates.extend(
+            f"{stem}{source}"
+            for source in _TYPESCRIPT_SOURCES_OF_SPECIFIER.get(suffix, ())
+            if source in valid_file_extensions
         )
-    )
+    return PathGlobs(candidates)
 
 
 async def _determine_import_from_candidates(
