@@ -662,3 +662,31 @@ def test_typescript_check_resolves_member_only_deps(
         f"TypeScript check failed — member node_modules likely missing from sandbox:\n"
         f"{result.stdout}\n{result.stderr}"
     )
+
+
+@pytest.mark.parametrize("project_root", ["", "named-project"])
+@pytest.mark.parametrize("type_error", [False, True])
+def test_typescript_check_with_root_and_subfolder_project(project_root: str, type_error: bool) -> None:
+    rule_runner = _create_rule_runner("pnpm")
+    prefix = f"{project_root}/" if project_root else ""
+    files = {
+        prefix + path.removeprefix("basic_project/"): content
+        for path, content in _load_project_test_files("basic_project").items()
+    }
+    files[prefix + "BUILD"] = (
+        "package_json()\n" if project_root else "package_json(name='workspace')\n"
+    )
+    if type_error:
+        files[prefix + "src/index.ts"] = 'let x = "hello";\nx = 42;\n'
+    rule_runner.write_files(files)
+    target = rule_runner.get_target(
+        Address(prefix + "src", target_name="ts_sources", relative_file_path="index.ts")
+    )
+    results = rule_runner.request(
+        CheckResults, [TypeScriptCheckRequest([TypeScriptCheckFieldSet.create(target)])]
+    )
+    assert len(results.results) == 1
+    assert results.results[0].exit_code == (1 if type_error else 0)
+    if type_error:
+        assert "TS2322" in results.results[0].stdout
+

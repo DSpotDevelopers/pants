@@ -18,7 +18,7 @@ from pants.backend.javascript.package_json import (
     all_package_json,
     find_owning_package,
 )
-from pants.backend.javascript.resolve import RequestNodeResolve, resolve_for_package
+from pants.backend.javascript.resolve import ChosenNodeResolve, RequestNodeResolve, resolve_for_package
 from pants.backend.javascript.subsystems.nodejs_tool import NodeJSToolRequest, prepare_tool_process
 from pants.backend.javascript.target_types import JSRuntimeSourceField
 from pants.backend.typescript.subsystem import TypeScriptSubsystem
@@ -278,7 +278,7 @@ done
         CreateDigest(
             [
                 FileContent(
-                    f"{project.root_dir}/{tsc_wrapper_filename}",
+                    os.path.join(project.root_dir, tsc_wrapper_filename),
                     script_content.encode(),
                 )
             ]
@@ -393,8 +393,10 @@ async def _prepare_tsc_build_process(
     named_cache_local_dir = "typescript_cache"
     named_cache_sandbox_mount_dir = "._tsc_cache"
 
-    project_resolve = await resolve_for_package(
-        RequestNodeResolve(Address(project.root_dir)), **implicitly()
+    project_resolve = (
+        await resolve_for_package(RequestNodeResolve(Address(project.root_dir)), **implicitly())
+        if project.root_dir
+        else ChosenNodeResolve(project)
     )
 
     script_digest = await create_tsc_wrapper_script(
