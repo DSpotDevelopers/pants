@@ -367,9 +367,6 @@ async def _prepare_compilation_input(
     config_files = await _collect_config_files_for_project(
         project, project_targets, project_package_jsons, project_ts_configs
     )
-    for ts_config in project_ts_configs:
-        ts_config.validate_outdir()
-
     config_digest = (
         await path_globs_to_digest(
             PathGlobs(config_files, glob_match_error_behavior=GlobMatchErrorBehavior.ignore),

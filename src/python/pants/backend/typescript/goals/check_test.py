@@ -698,8 +698,11 @@ def test_check_selects_tsconfig_program_without_unrelated_sibling(
     if selection == "dependency":
         selected["references"] = [{"path": "../other"}]
     files["basic_project/" + selected_config] = json.dumps(selected)
+    other_options = {**compiler_options, "rootDir": "."}
+    if selection == "clean":
+        other_options.pop("outDir", None)
     files["basic_project/other/tsconfig.json"] = json.dumps(
-        {"compilerOptions": {**compiler_options, "rootDir": "."}, "include": ["*.ts"]}
+        {"compilerOptions": other_options, "include": ["*.ts"]}
     )
     files["basic_project/other/BUILD"] = "typescript_sources(name='ts_sources')\n"
     files["basic_project/other/broken.ts"] = "export const broken: string = 42;\n"
