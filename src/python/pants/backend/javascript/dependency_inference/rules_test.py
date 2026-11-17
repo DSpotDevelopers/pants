@@ -33,7 +33,7 @@ from pants.core.target_types import (
 from pants.core.util_rules.unowned_dependency_behavior import UnownedDependencyError
 from pants.engine.internals.graph import Owners, OwnersRequest
 from pants.engine.rules import QueryRule
-from pants.engine.target import InferredDependencies, Target
+from pants.engine.target import InferredDependencies, Target, TransitiveTargets, TransitiveTargetsRequest
 from pants.testutil.rule_runner import RuleRunner, engine_error
 from pants.util.ordered_set import FrozenOrderedSet
 
@@ -47,6 +47,7 @@ def rule_runner() -> RuleRunner:
             QueryRule(Owners, (OwnersRequest,)),
             QueryRule(InferredDependencies, (InferNodePackageDependenciesRequest,)),
             QueryRule(InferredDependencies, (InferJSDependenciesRequest,)),
+            QueryRule(TransitiveTargets, (TransitiveTargetsRequest,)),
         ],
         target_types=[
             *package_json.target_types(),
@@ -647,19 +648,28 @@ def test_infers_bin_package_json_field_js_source_dependency(rule_runner: RuleRun
     assert set(addresses) == {Address("src/js/bin", relative_file_path="index.js")}
 
 
-@pytest.mark.parametrize("source", ["index.js", "index.d.ts", "schema.json"])
+@pytest.mark.parametrize(
+    "source, owner",
+    [
+        ("index.js", "javascript_sources"),
+        ("index.d.ts", "typescript_sources"),
+        ("schema.json", "files"),
+        ("schema.json", "resources"),
+    ],
+)
 @pytest.mark.parametrize("export_form", ["string", "root", "subpath"])
-def test_infers_exports_package_json_field_js_source_dependency(
-    rule_runner: RuleRunner, source: str, export_form: str
+def test_package_exports_keep_runtime_inference_and_declared_data(
+    rule_runner: RuleRunner, source: str, owner: str, export_form: str
 ) -> None:
     path = f"lib/{source}"
     exports = path if export_form == "string" else {"." if export_form == "root" else "lib": path}
-    build = "javascript_sources()" if source == "index.js" else f'files(sources=["{source}"])'
+    runtime = owner in ("javascript_sources", "typescript_sources")
+    package = "package_json()" if runtime else f'package_json(dependencies=["src/js/lib/{source}"])'
     rule_runner.write_files(
         {
-            "src/js/BUILD": "package_json()",
+            "src/js/BUILD": package,
             "src/js/package.json": given_package("ham", "0.0.1", exports=exports),
-            "src/js/lib/BUILD": build,
+            "src/js/lib/BUILD": f'{owner}(sources=["{source}"])',
             f"src/js/lib/{source}": "",
         }
     )
@@ -670,7 +680,12 @@ def test_infers_exports_package_json_field_js_source_dependency(
         [InferNodePackageDependenciesRequest(NodePackageInferenceFieldSet.create(pkg_tgt))],
     ).include
 
-    assert set(addresses) == {Address("src/js/lib", relative_file_path=source)}
+    exported = Address("src/js/lib", relative_file_path=source)
+    assert set(addresses) == ({exported} if runtime else set())
+    dependencies = rule_runner.request(
+        TransitiveTargets, [TransitiveTargetsRequest([pkg_tgt.address])]
+    )
+    assert exported in {target.address for target in dependencies.dependencies}
 
 
 @pytest.mark.parametrize("exports", ("lib/*.js", {".": "lib/*.js"}, {"lib": "lib/*.js"}))
