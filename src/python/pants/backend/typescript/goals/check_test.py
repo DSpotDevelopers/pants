@@ -666,7 +666,9 @@ def test_typescript_check_resolves_member_only_deps(
 
 @pytest.mark.parametrize("project_root", ["", "named-project"])
 @pytest.mark.parametrize("type_error", [False, True])
-def test_typescript_check_with_root_and_subfolder_project(project_root: str, type_error: bool) -> None:
+def test_typescript_check_with_root_and_subfolder_project(
+    project_root: str, type_error: bool
+) -> None:
     rule_runner = _create_rule_runner("pnpm")
     prefix = f"{project_root}/" if project_root else ""
     files = {
