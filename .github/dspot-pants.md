@@ -17,7 +17,8 @@ from `main`, supplying its number:
 gh workflow run dspot-pants.yaml --repo DSpotDevelopers/pants --ref main -f pull_request=7
 ```
 
-Repeat with `pull_request=8` after the workflow itself is reviewed and green.
+Repeat with `pull_request=8`, `9` and `10` after the workflow is reviewed,
+merged to `main`, and admitted to the existing company runners.
 The run resolves and records the current head and base before starting. The
 `DSpot Pants` status links to the run that built and tested that head.
 
@@ -30,7 +31,18 @@ and elapsed time; cgroup peak memory is recorded in each job summary when
 available. Cold and warm timings must be read from actual runs before treating
 the runner sizing as qualified.
 
-Repository Actions must be enabled and the existing organization runner group
-must admit this fork. Keep the inherited upstream workflows disabled in the fork:
-their external runner labels and publishing/audit jobs are not this pipeline.
-Rollback is reverting this workflow; existing statuses retain their tested SHA.
+This is a fork-only CI change. The fork's default branch contains only
+`dspot-pants.yaml`: upstream's scheduled, release, maintenance and test workflows
+are removed along with the retired cherry-picker smoke test and its BUILD
+bindings. The Pants patches and upstream release/generation tooling are retained.
+Exit: upstream workflows return only if we ever push to upstream.
+
+Actions stays off during review. The first merge cannot have a hosted check;
+only the owner may approve that bootstrap exception. After that merge, the
+coordinator enables Actions, admits the existing organization runner group and
+confirms no GitHub-hosted job is queued. Then dispatch the four patch PRs; each
+still requires approval and an actual green result on its exact head.
+
+Rollback: disable Actions before reverting this PR, because reverting restores
+upstream workflows with GitHub-hosted jobs. Existing statuses retain their tested
+SHA. Do not regenerate upstream workflows on the fork's default branch.
