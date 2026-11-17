@@ -69,6 +69,8 @@ jobs:
     needs: source
     runs-on: [self-hosted, linux, x64, dspot]
     timeout-minutes: 90
+    outputs:
+      version: ${{ steps.release.outputs.version }}
     container: quay.io/pypa/manylinux_2_28_x86_64:latest
     env:
       PY: /opt/python/cp314-cp314/bin/python
@@ -101,10 +103,14 @@ jobs:
         with:
           version: 23.x
       - name: Build the release from the checked source
+        id: release
         env:
           EXPECTED_HEAD: ${{ needs.source.outputs.head }}
         run: |
           test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          version="$(cat src/python/pants/VERSION)"
+          [[ "$version" =~ ^[0-9][A-Za-z0-9.+-]*$ ]]
+          printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
           TIMEFORMAT='release elapsed=%R user=%U system=%S seconds'
           time {
             ./pants run src/python/pants_release/release.py -- build-wheels
@@ -194,6 +200,137 @@ jobs:
             cat /sys/fs/cgroup/memory.peak >> "$GITHUB_STEP_SUMMARY"
           fi
 
+  consumer_source:
+    if: >-
+      github.repository == 'DSpotDevelopers/pants'
+      && github.event_name == 'pull_request_target'
+      && (github.event.pull_request.author_association == 'OWNER'
+          || github.event.pull_request.author_association == 'MEMBER'
+          || github.event.pull_request.author_association == 'COLLABORATOR')
+      && github.event.pull_request.head.repo.full_name == github.repository
+    needs: source
+    runs-on: [self-hosted, linux, x64, slot-cpus-1]
+    timeout-minutes: 5
+    outputs:
+      head: ${{ steps.company.outputs.head }}
+    steps:
+      - id: company
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        with:
+          github-token: ${{ secrets.COMPANY_READ_TOKEN }}
+          script: |
+            const {data: commit} = await github.rest.repos.getCommit({
+              owner: 'DSpotDevelopers', repo: 'dspot-company-data', ref: 'main'
+            });
+            core.setOutput('head', commit.sha);
+
+  consumers:
+    if: >-
+      github.repository == 'DSpotDevelopers/pants'
+      && github.event_name == 'pull_request_target'
+      && (github.event.pull_request.author_association == 'OWNER'
+          || github.event.pull_request.author_association == 'MEMBER'
+          || github.event.pull_request.author_association == 'COLLABORATOR')
+      && github.event.pull_request.head.repo.full_name == github.repository
+    needs: [source, build, consumer_source]
+    runs-on: [self-hosted, linux, x64, slot-medium]
+    timeout-minutes: 30
+    container: quay.io/pypa/manylinux_2_28_x86_64:latest
+    strategy:
+      fail-fast: false
+      matrix:
+        consumer:
+          - packages/design
+          - packages/plugin-sdk
+          - packages/store
+          - workflows/accountancy-library/core
+    env:
+      CANDIDATE_VERSION: ${{ needs.build.outputs.version }}
+      CONSUMER: ${{ matrix.consumer }}
+      PANTS_PANTSD: 'false'
+      PANTS_PROCESS_EXECUTION_LOCAL_PARALLELISM: '1'
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-${{ needs.source.outputs.head }}
+          path: ${{ runner.temp }}/candidate-release
+      - name: Select the built release executable
+        run: |
+          mapfile -t candidates < <(find "$RUNNER_TEMP/candidate-release" -type f \
+            -name 'pants-pex*' ! -name '*.sha256' ! -name '*cp314t*')
+          test "${#candidates[@]}" -eq 1
+          chmod u+x "${candidates[0]}"
+          printf 'PANTS_BIN=%s\n' "${candidates[0]}" >> "$GITHUB_ENV"
+          echo /opt/python/cp314-cp314/bin >> "$GITHUB_PATH"
+          printf 'PANTS_NAMED_CACHES_DIR=%s/dspot-pants-consumers/named-caches\n' "$RUNNER_TOOL_CACHE" >> "$GITHUB_ENV"
+          printf 'PANTS_LOCAL_STORE_DIR=%s/dspot-pants-consumers/local-store\n' "$RUNNER_TOOL_CACHE" >> "$GITHUB_ENV"
+          printf 'XDG_CACHE_HOME=%s/dspot-pants-consumers/bootstrap\n' "$RUNNER_TOOL_CACHE" >> "$GITHUB_ENV"
+      - name: Check out the private consumer repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          repository: DSpotDevelopers/dspot-company-data
+          ref: ${{ needs.consumer_source.outputs.head }}
+          path: company
+          token: ${{ secrets.COMPANY_READ_TOKEN }}
+          persist-credentials: false
+      - name: Resolve and test the consumer with this release
+        working-directory: company
+        env:
+          CANDIDATE_HEAD: ${{ needs.source.outputs.head }}
+        run: |
+          pants=("$PANTS_BIN" "--pants-version=$CANDIDATE_VERSION" --no-pantsd)
+          test "$("${pants[@]}" --version)" = "$CANDIDATE_VERSION"
+          printf 'Pants source: %s; company source: %s; consumer: %s\n' \
+            "$CANDIDATE_HEAD" "$(git rev-parse HEAD)" "$CONSUMER" >> "$GITHUB_STEP_SUMMARY"
+          TIMEFORMAT='consumer elapsed=%R user=%U system=%S seconds'
+          time {
+            "${pants[@]}" tailor "$CONSUMER"
+            "${pants[@]}" filedeps --transitive "$CONSUMER/package.json" > "$RUNNER_TEMP/export-files.txt"
+            python3 - <<'CHECK_EXPORTS'
+          import json
+          import os
+          from pathlib import Path
+
+          consumer = Path(os.environ["CONSUMER"])
+          manifest = json.loads((consumer / "package.json").read_text())
+          files = set(Path(os.environ["RUNNER_TEMP"], "export-files.txt").read_text().splitlines())
+
+          def destinations(value):
+              if isinstance(value, str):
+                  yield value
+              elif isinstance(value, dict):
+                  for item in value.values():
+                      yield from destinations(item)
+              elif isinstance(value, list):
+                  for item in value:
+                      yield from destinations(item)
+
+          exports = set(destinations(manifest.get("exports", {})))
+          if not exports:
+              raise SystemExit("Consumer has no exports to qualify")
+          for export in sorted(exports):
+              if not export.startswith("./") or "*" in export:
+                  raise SystemExit(f"Export needs a concrete local destination: {export}")
+              path = (consumer / export).as_posix()
+              if not (consumer / export).is_file() or path not in files:
+                  raise SystemExit(f"Export absent from the package dependency graph: {path}")
+          print(f"{consumer}: all {len(exports)} exported files belong to the package graph")
+          CHECK_EXPORTS
+            "${pants[@]}" check test "$CONSUMER::"
+          }
+      - name: Report consumer memory
+        if: always()
+        run: |
+          if test -r /sys/fs/cgroup/memory.peak; then
+            printf 'Consumer peak memory (bytes): ' >> "$GITHUB_STEP_SUMMARY"
+            cat /sys/fs/cgroup/memory.peak >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Remove the private job checkout and downloaded candidate
+        if: always()
+        run: |
+          rm -rf -- "$GITHUB_WORKSPACE/company" "$RUNNER_TEMP/candidate-release"
+
   result:
     if: >-
       always() && needs.source.result == 'success'
@@ -203,7 +340,7 @@ jobs:
           || github.event.pull_request.author_association == 'MEMBER'
           || github.event.pull_request.author_association == 'COLLABORATOR')
       && github.event.pull_request.head.repo.full_name == github.repository
-    needs: [source, build, tests]
+    needs: [source, build, tests, consumer_source, consumers]
     runs-on: [self-hosted, linux, x64, slot-cpus-1]
     timeout-minutes: 5
     permissions:
@@ -214,13 +351,15 @@ jobs:
           HEAD_SHA: ${{ needs.source.outputs.head }}
           BUILD_RESULT: ${{ needs.build.result }}
           TEST_RESULT: ${{ needs.tests.result }}
+          CONSUMER_RESULT: ${{ needs.consumers.result }}
         with:
           script: |
-            const passed = process.env.BUILD_RESULT === 'success' && process.env.TEST_RESULT === 'success';
+            const passed = process.env.BUILD_RESULT === 'success'
+              && process.env.TEST_RESULT === 'success' && process.env.CONSUMER_RESULT === 'success';
             await github.rest.repos.createCommitStatus({
               ...context.repo, sha: process.env.HEAD_SHA,
               state: passed ? 'success' : 'failure', context: 'DSpot Pants',
-              description: `Release build: ${process.env.BUILD_RESULT}; focused tests: ${process.env.TEST_RESULT}`,
+              description: `Release build: ${process.env.BUILD_RESULT}; focused tests: ${process.env.TEST_RESULT}; consumers: ${process.env.CONSUMER_RESULT}`,
               target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
             });
-            if (!passed) core.setFailed('The source build and focused tests must both pass');
+            if (!passed) core.setFailed('The source build, focused tests and all four consumers must pass');
