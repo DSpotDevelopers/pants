@@ -38,7 +38,9 @@ the runner sizing as qualified.
 The consumer matrix downloads the `release-<head>` artifact from the same run;
 it never launches the company's pinned Pants or downloads a substitute release.
 It checks the artifact's version against the source build's version, then uses
-that executable for stock `tailor`, `filedeps --transitive`, `check` and `test`.
+that executable for stock `tailor --check`, `filedeps --transitive`, `check` and
+`test`. Tailor must accept the committed BUILD files without rewriting them; a
+candidate that would change ownership fails before export or test qualification.
 The four consumers are `packages/design`, `packages/plugin-sdk`, `packages/store`
 and `workflows/accountancy-library/core`. Every concrete exported file must occur
 in its own manifest's transitive file dependencies before that package's tests
@@ -51,8 +53,12 @@ and rotated by the runtime owner. It must not grant writes. One light metadata
 job resolves company `main` once; every matrix member checks out that same
 immutable commit. Each records the company commit with the candidate source SHA
 and consumer in the run summary, and never persists the credential. No company files are
-uploaded as public artifacts; the private checkout and downloaded candidate are
-removed at job end. Consumer qualification uses the existing
+uploaded as public artifacts. The private checkout, downloaded candidate, export
+receipt and all consumer cache state are removed at job end. Named caches, the
+local content store, bootstrap cache, temporary files and process sandboxes live
+under this job's `RUNNER_TEMP/pants-consumer-state`, never the persistent runner
+tool cache. This sacrifices cross-job cache reuse so private source snapshots do
+not survive qualification. Consumer qualification uses the existing
 `slot-medium` runners, one test process per job, and reports elapsed/CPU time and
 cgroup peak memory. Its live runtime and memory qualification remain unproven
 until the first complete run; no new runner or capacity is requested.

@@ -262,9 +262,13 @@ jobs:
           chmod u+x "${candidates[0]}"
           printf 'PANTS_BIN=%s\n' "${candidates[0]}" >> "$GITHUB_ENV"
           echo /opt/python/cp314-cp314/bin >> "$GITHUB_PATH"
-          printf 'PANTS_NAMED_CACHES_DIR=%s/dspot-pants-consumers/named-caches\n' "$RUNNER_TOOL_CACHE" >> "$GITHUB_ENV"
-          printf 'PANTS_LOCAL_STORE_DIR=%s/dspot-pants-consumers/local-store\n' "$RUNNER_TOOL_CACHE" >> "$GITHUB_ENV"
-          printf 'XDG_CACHE_HOME=%s/dspot-pants-consumers/bootstrap\n' "$RUNNER_TOOL_CACHE" >> "$GITHUB_ENV"
+          state="$RUNNER_TEMP/pants-consumer-state"
+          mkdir -p "$state/tmp" "$state/sandboxes"
+          printf 'PANTS_NAMED_CACHES_DIR=%s/named-caches\n' "$state" >> "$GITHUB_ENV"
+          printf 'PANTS_LOCAL_STORE_DIR=%s/local-store\n' "$state" >> "$GITHUB_ENV"
+          printf 'XDG_CACHE_HOME=%s/bootstrap\n' "$state" >> "$GITHUB_ENV"
+          printf 'TMPDIR=%s/tmp\n' "$state" >> "$GITHUB_ENV"
+          printf 'PANTS_LOCAL_EXECUTION_ROOT_DIR=%s/sandboxes\n' "$state" >> "$GITHUB_ENV"
       - name: Check out the private consumer repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -284,7 +288,7 @@ jobs:
             "$CANDIDATE_HEAD" "$(git rev-parse HEAD)" "$CONSUMER" >> "$GITHUB_STEP_SUMMARY"
           TIMEFORMAT='consumer elapsed=%R user=%U system=%S seconds'
           time {
-            "${pants[@]}" tailor "$CONSUMER"
+            "${pants[@]}" tailor --check "$CONSUMER"
             "${pants[@]}" filedeps --transitive "$CONSUMER/package.json" > "$RUNNER_TEMP/export-files.txt"
             python3 - <<'CHECK_EXPORTS'
           import json
@@ -329,7 +333,8 @@ jobs:
       - name: Remove the private job checkout and downloaded candidate
         if: always()
         run: |
-          rm -rf -- "$GITHUB_WORKSPACE/company" "$RUNNER_TEMP/candidate-release"
+          rm -rf -- "$GITHUB_WORKSPACE/company" "$RUNNER_TEMP/candidate-release" \
+            "$RUNNER_TEMP/pants-consumer-state" "$RUNNER_TEMP/export-files.txt"
 
   result:
     if: >-
