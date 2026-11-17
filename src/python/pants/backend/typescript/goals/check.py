@@ -19,7 +19,11 @@ from pants.backend.javascript.package_json import (
     all_package_json,
     find_owning_package,
 )
-from pants.backend.javascript.resolve import ChosenNodeResolve, RequestNodeResolve, resolve_for_package
+from pants.backend.javascript.resolve import (
+    ChosenNodeResolve,
+    RequestNodeResolve,
+    resolve_for_package,
+)
 from pants.backend.javascript.subsystems.nodejs_tool import NodeJSToolRequest, prepare_tool_process
 from pants.backend.javascript.target_types import JSRuntimeSourceField
 from pants.backend.typescript.subsystem import TypeScriptSubsystem
@@ -51,7 +55,14 @@ from pants.engine.fs import (
     GlobMatchErrorBehavior,
     PathGlobs,
 )
-from pants.engine.internals.graph import find_all_targets, hydrate_sources, transitive_targets
+from pants.engine.internals.graph import (
+    OwnersRequest,
+    find_all_targets,
+    find_owners,
+    find_valid_field_sets,
+    hydrate_sources,
+    transitive_targets,
+)
 from pants.engine.internals.native_engine import MergeDigests
 from pants.engine.internals.selectors import concurrently
 from pants.engine.intrinsics import (
@@ -629,9 +640,7 @@ async def _typecheck_single_project(
             partition_description=f"TypeScript check on {project.root_dir} (no selected program)",
         )
 
-    selected_configs = await path_globs_to_digest(
-        PathGlobs(selection.config_files), **implicitly()
-    )
+    selected_configs = await path_globs_to_digest(PathGlobs(selection.config_files), **implicitly())
     config_owners = await find_owners(OwnersRequest(selection.config_files), **implicitly())
     config_dependencies = await transitive_targets(
         TransitiveTargetsRequest(
@@ -667,10 +676,14 @@ async def _typecheck_single_project(
         **implicitly(),
     )
     input_digest = await merge_digests(
-        MergeDigests([
-            input_digest, selected_configs, generated_config_data.snapshot.digest,
-            *(package.digest for package in packages),
-        ])
+        MergeDigests(
+            [
+                input_digest,
+                selected_configs,
+                generated_config_data.snapshot.digest,
+                *(package.digest for package in packages),
+            ]
+        )
     )
 
     process = await _prepare_tsc_build_process(
