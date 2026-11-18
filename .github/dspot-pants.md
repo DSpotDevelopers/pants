@@ -24,13 +24,18 @@ persist credentials, and no repository or organization secrets are supplied to
 those jobs. A skipped test job or successful packaging alone cannot report success.
 The `DSpot Pants` status links to the run that built and tested its exact head.
 
-The build uses the company's existing `[self-hosted, linux, x64, dspot]` slots;
-focused Python suites use `slot-medium`. Both container jobs also require
-`docker-socket`, the fleet's label for a runner with a usable guarded Docker
-socket. The general `dspot` or `docker` labels alone do not promise that socket.
-API bookkeeping keeps its `slot-cpus-1` route and does not require Docker.
-This selects a capability within the existing resource classes; it does not
-create runners, change slot sizes or expose the host's Docker socket.
+Both container jobs use the served company Docker route:
+`[self-hosted, linux, x64, docker, dspot, docker-socket]`.
+`docker-socket` is the fleet's label for a usable guarded Docker socket;
+the general `dspot` or `docker` labels alone do not promise that socket.
+There is no verified medium Docker route, so focused tests move from the
+unserved medium intersection to this existing heavy Docker pool. Their first
+complete run must supply CPU, peak memory and elapsed time before their sizing
+is qualified. API bookkeeping keeps its `slot-cpus-1` route without Docker.
+No runner, slot size, capacity or host socket exposure changes here. A usable
+socket does not by itself prove that the fleet supports GitHub's job-container
+mounts; the existing Docker guard must accept that operation without being
+weakened before these jobs can start.
 The native engine is built once and handed to tests from the same source SHA.
 Python selection is stock `--changed-since` with direct dependents. Rust's
 JavaScript inference tests run only when their crate changes. Bash records CPU
