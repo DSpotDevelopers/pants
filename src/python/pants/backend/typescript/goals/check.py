@@ -658,12 +658,15 @@ async def _typecheck_single_project(
         environment_aware_package(EnvironmentAwarePackageRequest(field_set))
         for field_set in packages_per_target.field_sets
     )
-    config_data = await determine_source_files(
+    generated_config_data = await determine_source_files(
         SourceFilesRequest(
             (
                 target[SourcesField]
                 for target in config_dependencies.closure
-                if target.has_field(SourcesField) and target.address not in package_addresses
+                if target.has_field(SourcesField)
+                and not target.has_field(FileSourceField)
+                and not target.has_field(ResourceSourceField)
+                and target.address not in package_addresses
             ),
             for_sources_types=(FileSourceField, ResourceSourceField),
             enable_codegen=True,
@@ -676,7 +679,7 @@ async def _typecheck_single_project(
                 input_digest,
                 actual_assets,
                 selected_configs,
-                config_data.snapshot.digest,
+                generated_config_data.snapshot.digest,
                 *(package.digest for package in packages),
             ]
         )
