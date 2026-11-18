@@ -1,6 +1,7 @@
 name: DSpot Pants
 
 on:
+  workflow_dispatch:
   pull_request_target:
     types: [opened, synchronize, reopened, ready_for_review, edited]
 
@@ -19,11 +20,12 @@ jobs:
   source:
     if: >-
       github.repository == 'DSpotDevelopers/pants'
-      && github.event_name == 'pull_request_target'
-      && (github.event.pull_request.author_association == 'OWNER'
-          || github.event.pull_request.author_association == 'MEMBER'
-          || github.event.pull_request.author_association == 'COLLABORATOR')
-      && github.event.pull_request.head.repo.full_name == github.repository
+      && ((github.event_name == 'workflow_dispatch' && startsWith(github.ref, 'refs/heads/'))
+          || (github.event_name == 'pull_request_target'
+              && (github.event.pull_request.author_association == 'OWNER'
+                  || github.event.pull_request.author_association == 'MEMBER'
+                  || github.event.pull_request.author_association == 'COLLABORATOR')
+              && github.event.pull_request.head.repo.full_name == github.repository))
     runs-on: [self-hosted, linux, x64, slot-cpus-1]
     timeout-minutes: 5
     permissions:
@@ -39,16 +41,36 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
         with:
           script: |
-            if (!/^[1-9][0-9]*$/.test(process.env.PR_NUMBER)) {
+            let number = process.env.PR_NUMBER;
+            if (context.eventName === 'workflow_dispatch') {
+              if (!context.ref.startsWith('refs/heads/')) {
+                throw new Error('Dispatch requires a branch with an open pull request');
+              }
+              const {data: prs} = await github.rest.pulls.list({
+                ...context.repo, state: 'open',
+                head: `${context.repo.owner}:${context.ref.slice('refs/heads/'.length)}`,
+                per_page: 100
+              });
+              if (prs.length !== 1) {
+                throw new Error('Dispatch requires exactly one open pull request for this branch');
+              }
+              number = String(prs[0].number);
+            }
+            if (!/^[1-9][0-9]*$/.test(number)) {
               throw new Error('A pull request number is required');
             }
             const {data: pr} = await github.rest.pulls.get({
-              ...context.repo, pull_number: Number(process.env.PR_NUMBER)
+              ...context.repo, pull_number: Number(number)
             });
             if (pr.state !== 'open' || pr.draft
                 || !['OWNER', 'MEMBER', 'COLLABORATOR'].includes(pr.author_association)
                 || pr.head.repo.full_name !== context.payload.repository.full_name) {
               throw new Error('Only ready pull requests by repository owners, members or collaborators from this repository may execute');
+            }
+            if (context.eventName === 'workflow_dispatch'
+                && (pr.head.sha !== context.sha
+                    || pr.head.ref !== context.ref.slice('refs/heads/'.length))) {
+              throw new Error('Dispatch must match the pull request branch and its current head');
             }
             core.setOutput('head', pr.head.sha);
             core.setOutput('base', pr.base.sha);
@@ -61,11 +83,12 @@ jobs:
   build:
     if: >-
       github.repository == 'DSpotDevelopers/pants'
-      && github.event_name == 'pull_request_target'
-      && (github.event.pull_request.author_association == 'OWNER'
-          || github.event.pull_request.author_association == 'MEMBER'
-          || github.event.pull_request.author_association == 'COLLABORATOR')
-      && github.event.pull_request.head.repo.full_name == github.repository
+      && ((github.event_name == 'workflow_dispatch' && startsWith(github.ref, 'refs/heads/'))
+          || (github.event_name == 'pull_request_target'
+              && (github.event.pull_request.author_association == 'OWNER'
+                  || github.event.pull_request.author_association == 'MEMBER'
+                  || github.event.pull_request.author_association == 'COLLABORATOR')
+              && github.event.pull_request.head.repo.full_name == github.repository))
     needs: source
     runs-on: [self-hosted, linux, x64, dspot]
     timeout-minutes: 90
@@ -149,11 +172,12 @@ jobs:
   tests:
     if: >-
       github.repository == 'DSpotDevelopers/pants'
-      && github.event_name == 'pull_request_target'
-      && (github.event.pull_request.author_association == 'OWNER'
-          || github.event.pull_request.author_association == 'MEMBER'
-          || github.event.pull_request.author_association == 'COLLABORATOR')
-      && github.event.pull_request.head.repo.full_name == github.repository
+      && ((github.event_name == 'workflow_dispatch' && startsWith(github.ref, 'refs/heads/'))
+          || (github.event_name == 'pull_request_target'
+              && (github.event.pull_request.author_association == 'OWNER'
+                  || github.event.pull_request.author_association == 'MEMBER'
+                  || github.event.pull_request.author_association == 'COLLABORATOR')
+              && github.event.pull_request.head.repo.full_name == github.repository))
     needs: [source, build]
     runs-on: [self-hosted, linux, x64, slot-medium]
     timeout-minutes: 30
@@ -198,11 +222,12 @@ jobs:
     if: >-
       always() && needs.source.result == 'success'
       && github.repository == 'DSpotDevelopers/pants'
-      && github.event_name == 'pull_request_target'
-      && (github.event.pull_request.author_association == 'OWNER'
-          || github.event.pull_request.author_association == 'MEMBER'
-          || github.event.pull_request.author_association == 'COLLABORATOR')
-      && github.event.pull_request.head.repo.full_name == github.repository
+      && ((github.event_name == 'workflow_dispatch' && startsWith(github.ref, 'refs/heads/'))
+          || (github.event_name == 'pull_request_target'
+              && (github.event.pull_request.author_association == 'OWNER'
+                  || github.event.pull_request.author_association == 'MEMBER'
+                  || github.event.pull_request.author_association == 'COLLABORATOR')
+              && github.event.pull_request.head.repo.full_name == github.repository))
     needs: [source, build, tests]
     runs-on: [self-hosted, linux, x64, slot-cpus-1]
     timeout-minutes: 5
