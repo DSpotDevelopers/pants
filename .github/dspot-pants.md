@@ -25,7 +25,12 @@ those jobs. A skipped test job or successful packaging alone cannot report succe
 The `DSpot Pants` status links to the run that built and tested its exact head.
 
 The build uses the company's existing `[self-hosted, linux, x64, dspot]` slots;
-focused Python suites use `slot-medium`; API bookkeeping uses `slot-cpus-1`.
+focused Python suites use `slot-medium`. Both container jobs also require
+`docker-socket`, the fleet's label for a runner with a usable guarded Docker
+socket. The general `dspot` or `docker` labels alone do not promise that socket.
+API bookkeeping keeps its `slot-cpus-1` route and does not require Docker.
+This selects a capability within the existing resource classes; it does not
+create runners, change slot sizes or expose the host's Docker socket.
 The native engine is built once and handed to tests from the same source SHA.
 Python selection is stock `--changed-since` with direct dependents. Rust's
 JavaScript inference tests run only when their crate changes. Bash records CPU

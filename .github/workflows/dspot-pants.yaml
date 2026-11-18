@@ -67,7 +67,7 @@ jobs:
           || github.event.pull_request.author_association == 'COLLABORATOR')
       && github.event.pull_request.head.repo.full_name == github.repository
     needs: source
-    runs-on: [self-hosted, linux, x64, dspot]
+    runs-on: [self-hosted, linux, x64, dspot, docker-socket]
     timeout-minutes: 90
     container: quay.io/pypa/manylinux_2_28_x86_64:latest
     env:
@@ -155,7 +155,7 @@ jobs:
           || github.event.pull_request.author_association == 'COLLABORATOR')
       && github.event.pull_request.head.repo.full_name == github.repository
     needs: [source, build]
-    runs-on: [self-hosted, linux, x64, slot-medium]
+    runs-on: [self-hosted, linux, x64, slot-medium, docker-socket]
     timeout-minutes: 30
     container: quay.io/pypa/manylinux_2_28_x86_64:latest
     env:
