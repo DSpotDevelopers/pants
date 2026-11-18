@@ -28,6 +28,7 @@ from pants.backend.python.util_rules.interpreter_constraints import InterpreterC
 from pants.backend.python.util_rules.pex import PythonProvider
 from pants.backend.python.util_rules.pex import rules as pex_rules
 from pants.backend.python.util_rules.pex_environment import PythonExecutable
+from pants.core.environments.target_types import EnvironmentTarget
 from pants.core.util_rules.external_tool import (
     ExternalToolError,
     ExternalToolRequest,
@@ -527,6 +528,7 @@ async def get_python(
     rm: RmBinary,
     test: TestBinary,
     realpath: RealpathBinary,
+    environment: EnvironmentTarget,
 ) -> PythonExecutable:
     versions_info = pbs_subsystem.get_all_pbs_pythons()
 
@@ -551,7 +553,8 @@ async def get_python(
         )
     )
 
-    sandbox_cache_dir = PurePath(PBS_SANDBOX_NAME)
+    sandbox_base = PurePath(environment.sandbox_base_path())
+    sandbox_cache_dir = sandbox_base / PBS_SANDBOX_NAME
 
     # The final desired destination within the named cache:
     persisted_destination = sandbox_cache_dir / python_version
@@ -608,7 +611,7 @@ async def get_python(
                     #    environment the process actually ran in (local host or docker container).
                     f"""
                     # Step 1: check and skip
-                    if {test.path} -d {persisted_destination}; then
+                    if {test.path} -d "{persisted_destination}"; then
                         echo "{persisted_destination} already exists, fully created by earlier execution" >&2
                         {python3_path_echo}
                         exit 0
@@ -616,7 +619,7 @@ async def get_python(
 
                     # Step 2: copy from the digest into the named cache
                     {mkdir.path} -p "{temp_dir}"
-                    {cp.path} -R python "{copy_target}"
+                    {cp.path} -R "{sandbox_base / "python"}" "{copy_target}"
 
                     # Step 3: attempt to move, squashing the error
                     {mv.path} "{copy_target}" "{persisted_destination.parent}" || echo "mv failed: $?" >&2
