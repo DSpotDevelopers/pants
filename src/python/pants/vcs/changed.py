@@ -92,7 +92,15 @@ async def find_changed_owners(
         ),
         **implicitly(),
     )
-    result = FrozenOrderedSet(owners) | (dependents - owner_target_generators)
+    # A dependent's target generator is no change either: it depends on every target it generates,
+    # so it is a transitive dependent of each, and keeping it makes all of its siblings look changed
+    # (the same reason as above). One that is itself a direct owner (a deleted file) stays.
+    dependent_target_generators = FrozenOrderedSet(
+        addr.maybe_convert_to_target_generator() for addr in dependents if addr.is_generated_target
+    )
+    result = FrozenOrderedSet(owners) | (
+        dependents - owner_target_generators - (dependent_target_generators - FrozenOrderedSet(owners))
+    )
     if specs_filter.is_specified:
         # Finally, we must now filter out the result to only include what matches our tags, as the
         # last step of https://github.com/pantsbuild/pants/issues/15544.
