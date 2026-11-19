@@ -24,8 +24,25 @@ persist credentials, and no repository or organization secrets are supplied to
 those jobs. A skipped test job or successful packaging alone cannot report success.
 The `DSpot Pants` status links to the run that built and tested its exact head.
 
-The build uses the company's existing `[self-hosted, linux, x64, dspot]` slots;
-focused Python suites use `slot-medium`; API bookkeeping uses `slot-cpus-1`.
+Build and test steps run directly in the existing runner image. The build uses
+`[self-hosted, linux, x64, dspot]`; focused tests use `slot-medium`; API bookkeeping
+uses `slot-cpus-1`. These jobs do not require Docker and have no job-level
+`container` configuration. GitHub's built-in job container creates host binds
+and performs a network prune that the fleet guard intentionally refuses.
+The guard, runner images and fleet capacity are unchanged.
+
+Both source jobs use the same pinned, fleet-cached setup-python action for
+CPython 3.14 and select it through the upstream source bootstrap's `PY` setting.
+The interpreter belongs to the runner tool cache; no manylinux-only path is used.
+The checked source still drives the release build through `./pants`, rather than
+substituting the runner's installed release for the candidate being tested.
+The build installs its source-pinned Rust toolchain and Protoc as before.
+
+The artifacts remain unpublished CI outputs. A native runner build does not
+prove the portable manylinux compatibility assumed by the upstream wheel
+release helper; distribution compatibility and private consumer qualification
+remain release-pin gates. Passing fork CI does not authorize publication.
+
 The native engine is built once and handed to tests from the same source SHA.
 Python selection is stock `--changed-since` with direct dependents. Rust's
 JavaScript inference tests run only when their crate changes. Bash records CPU
