@@ -44,6 +44,7 @@ from pants.core.util_rules.system_binaries import (
     ShBinary,
     TestBinary,
 )
+from pants.engine.environment import ChosenLocalEnvironmentName, EnvironmentName
 from pants.engine.fs import DownloadFile
 from pants.engine.internals.native_engine import FileDigest
 from pants.engine.platform import Platform
@@ -529,6 +530,7 @@ async def get_python(
     test: TestBinary,
     realpath: RealpathBinary,
     environment: EnvironmentTarget,
+    local_environment: ChosenLocalEnvironmentName,
 ) -> PythonExecutable:
     versions_info = pbs_subsystem.get_all_pbs_pythons()
 
@@ -540,20 +542,27 @@ async def get_python(
         pbs_subsystem.release_constraints,
     )
 
-    downloaded_python = await download_external_tool(
-        ExternalToolRequest(
-            DownloadFile(
-                pbs_py_info["url"],
-                FileDigest(
-                    pbs_py_info["sha256"],
-                    pbs_py_info["size"],
-                ),
+    tool_request = ExternalToolRequest(
+        DownloadFile(
+            pbs_py_info["url"],
+            FileDigest(
+                pbs_py_info["sha256"],
+                pbs_py_info["size"],
             ),
-            "python/bin/python3",
-        )
+        ),
+        "python/bin/python3",
+    )
+    sandbox_base = PurePath(environment.sandbox_base_path())
+    # A workspace environment runs a process in the build root, so the archive extraction, which
+    # names its input by a sandbox-relative path, finds nothing there. The archive is the same bytes
+    # on any host: a workspace downloads and extracts it in the local environment, whose host and
+    # platform it shares.
+    downloaded_python = await (
+        download_external_tool(tool_request, **implicitly({local_environment.val: EnvironmentName}))
+        if environment.sandbox_base_path()
+        else download_external_tool(tool_request)
     )
 
-    sandbox_base = PurePath(environment.sandbox_base_path())
     sandbox_cache_dir = sandbox_base / PBS_SANDBOX_NAME
 
     # The final desired destination within the named cache:
