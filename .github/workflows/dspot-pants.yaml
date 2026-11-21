@@ -213,6 +213,11 @@ jobs:
         env:
           BASE: ${{ needs.source.outputs.base }}
           EXPECTED_HEAD: ${{ needs.source.outputs.head }}
+          # DSpot's Pants build does not use Docker environments; these tests need a Docker daemon our runners do not
+          # give PR jobs (medium slots have none, and the docker-socket guard refuses Pants' sandbox bind mounts). Each
+          # is named by its pytest node id, so the rest of its file still runs.
+          PANTS_PYTEST_ARGS: >-
+            ["--deselect=src/python/pants/backend/python/providers/python_build_standalone/rules_test.py::test_docker_python_path_uses_named_caches_in_container"]
         run: |
           test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
           TIMEFORMAT='tests elapsed=%R user=%U system=%S seconds'
