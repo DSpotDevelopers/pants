@@ -173,8 +173,6 @@ async def _prepare_inference_metadata(address: Address, file_path: str) -> Infer
 _TYPESCRIPT_SOURCES_OF_SPECIFIER = {
     ".js": (".ts", ".tsx", ".d.ts"),
     ".jsx": (".tsx",),
-    ".mjs": (".mts", ".d.mts"),
-    ".cjs": (".cts", ".d.cts"),
 }
 
 

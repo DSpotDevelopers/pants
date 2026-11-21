@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 from pants.backend.typescript.target_types import (
+    TS_FILE_EXTENSIONS,
     TypeScriptDependenciesField,
     TypeScriptSourceField,
     TypeScriptTestSourceField,
@@ -25,8 +26,7 @@ from pants.engine.target import (
 )
 from pants.util.strutil import help_text
 
-# Module-specific .mts/.cts files do not have JSX counterparts.
-TSX_FILE_EXTENSIONS = (".tsx", ".d.tsx")
+TSX_FILE_EXTENSIONS = tuple(f"{ext}x" for ext in TS_FILE_EXTENSIONS)
 
 
 class TSXDependenciesField(TypeScriptDependenciesField):
