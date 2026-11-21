@@ -99,7 +99,9 @@ async def find_changed_owners(
         addr.maybe_convert_to_target_generator() for addr in dependents if addr.is_generated_target
     )
     result = FrozenOrderedSet(owners) | (
-        dependents - owner_target_generators - (dependent_target_generators - FrozenOrderedSet(owners))
+        dependents
+        - owner_target_generators
+        - (dependent_target_generators - FrozenOrderedSet(owners))
     )
     if specs_filter.is_specified:
         # Finally, we must now filter out the result to only include what matches our tags, as the
