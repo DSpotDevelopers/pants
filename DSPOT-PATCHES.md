@@ -4,7 +4,7 @@ This is official Pants **2.33.2** plus the reviewed fixes below. Every fix has a
 Upstream submission is optional and belongs only to the owner; it is not a build or approval gate.
 Apart from the version label and this file, nothing else differs from the `release_2.33.2` tag.
 
-Version: `2.33.2+dspot.9`. A repository pins it like any Pants version: `pants_version = "2.33.2+dspot.9"` in
+Version: `2.33.2+dspot.10`. A repository pins it like any Pants version: `pants_version = "2.33.2+dspot.10"` in
 `pants.toml`. The stock scie-pants launcher fetches it through `PANTS_BOOTSTRAP_URLS`, set in the repository's
 committed `.pants.bootstrap`. There's no wrapper script.
 
@@ -21,6 +21,7 @@ committed `.pants.bootstrap`. There's no wrapper script.
 
 | 9 | JS/TS/TSX tests select existing execution environments; workspace-safe cache policy, archive extraction and Corepack paths | DSpotDevelopers/pants#5, approved at `455825ce1e72db3777a24e7d7aa6b62de12acadb` | Unblocks Pipeline 200 criterion 4; drop when a pinned upstream release provides equivalent execution-environment, bootstrap-path and cache behavior. |
 | 10 | In a workspace environment, a Node.js project is installed into the checkout once per session (one install of the project, never reused from the process cache), so a new checkout under a warm cache still gets its node_modules | This branch's follow-up to patch 9 (its PR on this fork) | Drop it with patch 9, when a pinned upstream release installs workspace-environment Node.js projects per session. |
+| 11 | `--changed-dependents` never selects a dependent's target generator: upstream drops the changed owners' generators (pantsbuild/pants#15313), and this applies the same rule to the dependents' generators, except one that is a direct owner (a deleted generated file); `changed_integration_test.py::test_change_dependent_in_another_generator` | DSpotDevelopers/pants#20, approved at `97887f08ba144945f672025515cb4f94dc4ddfc8`, merged to this fork's main as `a87bb3f648` | Drop it when a pinned upstream release excludes dependents' target generators from `--changed-dependents`. |
 
 JSON compiler inputs use stock `file` targets with explicit dependencies. The compiler no longer
 collects `resource` targets as JSON inputs; the existing file-target compiler test covers this path.
@@ -33,7 +34,7 @@ collects `resource` targets as JSON inputs; the existing file-target compiler te
   immutable release (immutable releases were enabled on this fork after `+dspot.1` was published). `+dspot.3` adds
   patches 3 and 4; `+dspot.4` adds patch 5; `+dspot.5` adds patches 6 and 7; `+dspot.6` corrects them (#3: config
   discovery inventories sources and configs, never the installed resolve's links). `+dspot.7` adds patch 8
-  from the approved config-input and package/output-validation fix. `+dspot.8` adds patch 9; `+dspot.9` adds patch 10. Every release from `+dspot.2` on is
+  from the approved config-input and package/output-validation fix. `+dspot.8` adds patch 9; `+dspot.9` adds patch 10; `+dspot.10` adds patch 11. Every release from `+dspot.2` on is
   immutable: the launcher can't check the PEX's hash.
 - When a patch's upstream PR is released, the next build drops it and bumps the `+dspot.N` label. When none is left,
   repositories go back to the plain official version and this branch is retired.
