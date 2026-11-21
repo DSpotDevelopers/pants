@@ -183,7 +183,7 @@ async def _collect_config_files_for_project(
     for ts_config in project_ts_configs:
         config_files.append(ts_config.path)
 
-    # The compiler reads imported assets as well as runtime sources (for example JSON schemas).
+    # Add file() targets that are dependencies of JS/TS targets.
     # Note: Package manager config files
     # (.npmrc, .pnpmrc, pnpm-workspace.yaml) should be dependencies of package_json targets
     # since they affect package installation, not TypeScript compilation directly.
@@ -193,9 +193,8 @@ async def _collect_config_files_for_project(
     )
 
     for target in transitive_targets_result.closure:
-        for field_type in (FileSourceField, ResourceSourceField):
-            if target.has_field(field_type):
-                config_files.append(target[field_type].file_path)
+        if target.has_field(FileSourceField):
+            config_files.append(target[FileSourceField].file_path)
 
     return config_files
 
@@ -320,11 +319,8 @@ async def _collect_project_targets(
         for target in all_targets
         if target.has_field(JSRuntimeSourceField)
         or include_assets
-        and any(
-            target.has_field(field_type)
-            and target[field_type].file_path.endswith(compiler_extensions)
-            for field_type in (FileSourceField, ResourceSourceField)
-        )
+        and target.has_field(FileSourceField)
+        and target[FileSourceField].file_path.endswith(compiler_extensions)
     ]
 
     target_owning_packages = await concurrently(
@@ -616,10 +612,9 @@ async def _typecheck_single_project(
         project, all_targets, all_projects, project_ts_configs, include_assets=True
     )
     assets = {
-        target[field_type].file_path: target
+        target[FileSourceField].file_path: target
         for target in candidates
-        for field_type in (FileSourceField, ResourceSourceField)
-        if target.has_field(field_type)
+        if target.has_field(FileSourceField)
     }
     selection = await _select_tsconfig_programs(
         project,
