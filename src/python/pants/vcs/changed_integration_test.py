@@ -167,6 +167,24 @@ def test_change_transitive_dep(repo: str) -> None:
     assert_count_loc(repo, DependentsOption.TRANSITIVE, expected_num_files=3)
 
 
+def test_change_dependent_in_another_generator(repo: str) -> None:
+    # A dependent in another target generator selects that generated target, never its generator:
+    # the generator depends on each target it generates, and selecting it would make its
+    # unrelated siblings (sibling.sh) look changed too.
+    create_file("user.sh", "source app.sh")
+    create_file("sibling.sh", "")
+    append_to_file("BUILD", 'shell_sources(name="other", sources=["user.sh", "sibling.sh"])\n')
+    _run_git(["add", "."])
+    _run_git(["commit", "-m", "another generator"])
+    append_to_file("transitive.sh", "# foo")
+    assert_list_stdout(
+        repo,
+        ["//app.sh:lib", "//dep.sh:lib", "//transitive.sh:lib", "//user.sh:other"],
+        DependentsOption.TRANSITIVE,
+    )
+    assert_count_loc(repo, DependentsOption.TRANSITIVE, expected_num_files=4)
+
+
 def test_unowned_file(repo: str) -> None:
     """Unowned files should still work with target-less goals like `count-loc`.
 
@@ -335,9 +353,11 @@ def test_deleted_file() -> None:
         delete_file("src/python/top/foo.py")
         result = _run_pants_goal(worktree, "list", DependentsOption.TRANSITIVE)
         result.assert_success()
+        # The deleted file's generator `top:top` stays: it is a direct owner. The dependent
+        # `bar_test.py:tests` is selected, never its generator `top:tests` (see
+        # test_change_dependent_in_another_generator).
         assert sorted(result.stdout.strip().splitlines()) == [
             "src/python/top/bar.py",
             "src/python/top/bar_test.py:tests",
-            "src/python/top:tests",
             "src/python/top:top",
         ]
