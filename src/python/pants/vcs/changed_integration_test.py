@@ -353,9 +353,11 @@ def test_deleted_file() -> None:
         delete_file("src/python/top/foo.py")
         result = _run_pants_goal(worktree, "list", DependentsOption.TRANSITIVE)
         result.assert_success()
+        # The deleted file's generator `top:top` stays: it is a direct owner. The dependent
+        # `bar_test.py:tests` is selected, never its generator `top:tests` (see
+        # test_change_dependent_in_another_generator).
         assert sorted(result.stdout.strip().splitlines()) == [
             "src/python/top/bar.py",
             "src/python/top/bar_test.py:tests",
-            "src/python/top:tests",
             "src/python/top:top",
         ]
