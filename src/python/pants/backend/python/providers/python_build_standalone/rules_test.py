@@ -3,6 +3,11 @@
 
 from __future__ import annotations
 
+import hashlib
+import io
+import tarfile
+from pathlib import Path
+
 import pytest
 
 from pants.backend.python.providers.python_build_standalone import rules as pbs_rules
@@ -16,12 +21,60 @@ from pants.backend.python.providers.python_build_standalone.rules import (
 )
 from pants.backend.python.util_rules.interpreter_constraints import InterpreterConstraints
 from pants.backend.python.util_rules.pex_environment import PythonExecutable
-from pants.core.environments.target_types import DockerEnvironmentTarget
+from pants.core.environments.target_types import (
+    DockerEnvironmentTarget,
+    LocalWorkspaceEnvironmentTarget,
+)
 from pants.core.util_rules.external_tool import ExternalToolError
 from pants.engine.environment import EnvironmentName
 from pants.engine.platform import Platform
 from pants.testutil.rule_runner import QueryRule, RuleRunner
 from pants.version import Version
+
+
+@pytest.mark.parametrize("environment", [None, "workspace"])
+def test_install_from_digest_uses_named_cache(environment: str | None, tmp_path: Path) -> None:
+    content = b"#!/bin/sh\nprintf 'owned interpreter fixture\\n'\n"
+    archive = tmp_path / "cpython.tar.gz"
+    with tarfile.open(archive, "w:gz") as tar:
+        entry = tarfile.TarInfo("python/bin/python3")
+        entry.size = len(content)
+        entry.mode = 0o755
+        tar.addfile(entry, io.BytesIO(content))
+    data = archive.read_bytes()
+    platform = Platform.create_for_localhost()
+    known = (
+        f"3.12.19+20260101|{platform.value}|{hashlib.sha256(data).hexdigest()}|"
+        f"{len(data)}|{archive.as_uri()}"
+    )
+    cache = tmp_path / "named caches"
+    rule_runner = RuleRunner(
+        bootstrap_args=[f"--named-caches-dir={cache}"],
+        rules=[
+            *pbs_rules.rules(),
+            QueryRule(PythonExecutable, (PBSPythonProvider, EnvironmentName)),
+        ],
+        target_types=[LocalWorkspaceEnvironmentTarget],
+        inherent_environment=EnvironmentName(environment),
+    )
+    rule_runner.write_files({"BUILD": "experimental_workspace_environment(name='workspace')"})
+    rule_runner.set_options(
+        [
+            "--backend-packages=['pants.backend.python', 'pants.backend.python.providers.experimental.python_build_standalone']",
+            "--interpreter-versions-universe=['3.12']",
+            "--environments-preview-names={'workspace': '//:workspace'}",
+            f"--python-build-standalone-python-provider-known-python-versions=[{known!r}]",
+        ],
+        env_inherit={"PATH"},
+    )
+    python = rule_runner.request(
+        PythonExecutable,
+        [PBSPythonProvider(InterpreterConstraints(["CPython==3.12.19"]))],
+    )
+    path = Path(python.path)
+    assert path.read_bytes() == content
+    assert path.is_relative_to(cache)
+    assert not Path(rule_runner.build_root, pbs_rules.PBS_SANDBOX_NAME).exists()
 
 
 def test_parse_py_version_and_pbs_release_tag() -> None:
