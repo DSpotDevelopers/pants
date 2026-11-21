@@ -50,16 +50,20 @@ def _override_math_ts_with_TS2322_error() -> str:
     """)
 
 
-@pytest.mark.parametrize("project_root", ["", "named-project"])
+@pytest.mark.parametrize("project_root", ["", "subfolder-project"])
 @pytest.mark.parametrize("type_error", [False, True])
-def test_typescript_check_with_named_package_target(project_root: str, type_error: bool) -> None:
+def test_typescript_check_with_root_and_subfolder_projects(
+    project_root: str, type_error: bool
+) -> None:
     rule_runner = _create_rule_runner("pnpm")
     prefix = f"{project_root}/" if project_root else ""
     files = {
         prefix + path.removeprefix("basic_project/"): content
         for path, content in _load_project_test_files("basic_project").items()
     }
-    files[prefix + "BUILD"] = "package_json(name='workspace')\n"
+    files[prefix + "BUILD"] = (
+        "package_json()\n" if project_root else "package_json(name='workspace')\n"
+    )
     if type_error:
         files[prefix + "src/index.ts"] = 'let x = "hello";\nx = 42;\n'
     rule_runner.write_files(files)
