@@ -207,7 +207,9 @@ def test_check_javascript_disabled_via_tsconfig(
     assert "error.js" not in results.results[0].stdout
 
 
-@pytest.mark.parametrize("module_kind", ["javascript", "declaration", "ambient"])
+@pytest.mark.parametrize(
+    "module_kind", ["javascript", "declaration", "commonjs_declaration", "ambient"]
+)
 def test_compiler_receives_imported_inputs(module_kind: str) -> None:
     rule_runner = _create_rule_runner("pnpm")
     files = _load_project_test_files("basic_project")
@@ -223,16 +225,29 @@ def test_compiler_receives_imported_inputs(module_kind: str) -> None:
         )
         files["basic_project/src/BUILD"] += '\nfile(name="types", source="virtual.d.ts")\n'
     else:
+        extension = "cjs" if module_kind == "commonjs_declaration" else "mjs"
         files["basic_project/src/index.ts"] = (
-            "import {answer} from './values.mjs';\nexport const result: number = answer;\n"
+            f"import {{answer}} from './values.{extension}';\nexport const result: number = answer;\n"
         )
-        files["basic_project/src/values.mjs"] = "export const answer = 42;\n"
+        files[f"basic_project/src/values.{extension}"] = "export const answer = 42;\n"
         files["basic_project/src/BUILD"] += '\njavascript_sources(name="js")\n'
-        if module_kind == "declaration":
-            # A declaration beside a JS module participates even when checkJs is false.
-            files["basic_project/src/values.mjs"] = "export const answer = 'runtime';\n"
-            files["basic_project/src/values.d.mts"] = "export declare const answer: number;\n"
-            files["basic_project/src/BUILD"] += '\nfile(name="types", source="values.d.mts")\n'
+        if module_kind in ("declaration", "commonjs_declaration"):
+            declaration = "d.cts" if module_kind == "commonjs_declaration" else "d.mts"
+            files[f"basic_project/src/values.{extension}"] = (
+                "exports.answer = 'runtime';\n"
+                if extension == "cjs"
+                else "export const answer = 'runtime';\n"
+            )
+            files[f"basic_project/src/values.{declaration}"] = (
+                "export declare const answer: number;\n"
+            )
+            files["basic_project/src/BUILD"] += (
+                f'\nfile(name="types", source="values.{declaration}")\n'
+            )
+            files["basic_project/src/BUILD"] = files["basic_project/src/BUILD"].replace(
+                'typescript_sources(name="ts_sources")',
+                'typescript_sources(name="ts_sources", dependencies=[":types"])',
+            )
     rule_runner.write_files(files)
     target = rule_runner.get_target(
         Address("basic_project/src", target_name="ts_sources", relative_file_path="index.ts")
