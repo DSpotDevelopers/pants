@@ -695,14 +695,16 @@ async def run_prepared_adhoc_process(
         output_directories = [
             os.path.normpath(os.path.join(working_directory, od)) for od in output_directories
         ]
-    await check_outputs(
-        output_digest=output_digest,
-        output_files=output_files,
-        output_directories=output_directories,
-        outputs_match_error_behavior=request.outputs_match_error_behavior,
-        outputs_match_mode=request.outputs_match_conjunction,
-        address=request.address,
-    )
+    # Keep failed processes' captures, but let callers report their primary error.
+    if result.exit_code == 0:
+        await check_outputs(
+            output_digest=output_digest,
+            output_files=output_files,
+            output_directories=output_directories,
+            outputs_match_error_behavior=request.outputs_match_error_behavior,
+            outputs_match_mode=request.outputs_match_conjunction,
+            address=request.address,
+        )
 
     if extra_contents:
         if request.use_working_directory_as_base_for_output_captures:

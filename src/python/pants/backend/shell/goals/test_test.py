@@ -157,7 +157,8 @@ def test_basic_usage_of_test_shell_command(rule_runner: RuleRunner) -> None:
 
 
 @pytest.mark.platform_specific_behavior
-def test_extra_outputs_support(rule_runner: RuleRunner) -> None:
+@pytest.mark.parametrize("exit_code", [0, 1])
+def test_extra_outputs_support(rule_runner: RuleRunner, exit_code: int) -> None:
     rule_runner.write_files(
         {
             "BUILD": dedent(
@@ -175,10 +176,11 @@ def test_extra_outputs_support(rule_runner: RuleRunner) -> None:
                 """
             ),
             "test.sh": dedent(
-                """\
+                f"""\
                 mkdir -p some-dir
                 echo "xyzzy" > some-dir/foo.txt
                 echo "hello" > world.txt
+                exit {exit_code}
                 """
             ),
         }
@@ -192,6 +194,7 @@ def test_extra_outputs_support(rule_runner: RuleRunner) -> None:
         return rule_runner.request(TestResult, [test_batch_for_target(test_target)])
 
     result = run_test(rule_runner.get_target(Address("", target_name="test")))
+    assert result.exit_code == exit_code
     assert result.extra_output is not None
     digest_contents = rule_runner.request(DigestContents, [result.extra_output.digest])
     digest_contents_sorted = sorted(digest_contents, key=lambda x: x.path)
