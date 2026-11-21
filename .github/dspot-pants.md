@@ -4,26 +4,45 @@
 upstream workflows. Its definition belongs on the fork's default branch, `main`.
 It builds the requested source head; it never publishes a release or changes a pin.
 
-Ready release PRs targeting `dspot/**` run through `pull_request_target` using
-this trusted workflow. Only heads in DSpotDevelopers/pants may execute. The source
-jobs have read-only credentials, and checkout does not persist them. Separate
-light jobs record the result against the exact tested commit. Neither a skipped
-test job nor a successful packaging step alone can produce a successful status.
+Ready PRs, including stacked PRs targeting another change branch, run through
+`pull_request_target` using the trusted default-branch workflow. Every job requires an author association
+of OWNER, MEMBER or COLLABORATOR and a head in DSpotDevelopers/pants. A fork head
+is refused even when its author has one of those associations. Missing PR metadata
+fails closed before a runner is assigned. The source job rechecks the current PR
+association before recording a pending status.
 
-To check an existing PR without changing its approved head, dispatch the workflow
-from `main`, supplying its number:
+There is no `pull_request` or manual-dispatch entry point: the former allows the
+PR to change its workflow definition, and the latter has no PR author association.
+After this change reaches the default branch, synchronize or reopen an eligible
+PR to request a run. A rerun of an older run uses its older workflow definition;
+it does not prove this guard. Existing queued pre-guard runs likewise keep their
+original definition and need separate coordinator disposition.
 
-```console
-gh workflow run dspot-pants.yaml --repo DSpotDevelopers/pants --ref main -f pull_request=7
-```
+Only the source and result jobs can write commit statuses, and neither checks out
+PR code. The build and test jobs have only read permission; checkout does not
+persist credentials, and no repository or organization secrets are supplied to
+those jobs. A skipped test job or successful packaging alone cannot report success.
+The `DSpot Pants` status links to the run that built and tested its exact head.
 
-Repeat with `pull_request=8`, `9` and `10` after the reviewed bootstrap changes
-are merged to `main` and the coordinator has enabled Actions and runner access.
-The run resolves and records the current head and base before starting. The
-`DSpot Pants` status links to the run that built and tested that head.
+Build and test steps run directly in the existing runner image. The build uses
+`[self-hosted, linux, x64, dspot]`; focused tests use `slot-medium`; API bookkeeping
+uses `slot-cpus-1`. These jobs do not require Docker and have no job-level
+`container` configuration. GitHub's built-in job container creates host binds
+and performs a network prune that the fleet guard intentionally refuses.
+The guard, runner images and fleet capacity are unchanged.
 
-The build uses the company's existing `[self-hosted, linux, x64, dspot]` slots;
-focused Python suites use `slot-medium`; API bookkeeping uses `slot-cpus-1`.
+Both source jobs use the same pinned, fleet-cached setup-python action for
+CPython 3.14 and select it through the upstream source bootstrap's `PY` setting.
+The interpreter belongs to the runner tool cache; no manylinux-only path is used.
+The checked source still drives the release build through `./pants`, rather than
+substituting the runner's installed release for the candidate being tested.
+The build installs its source-pinned Rust toolchain and Protoc as before.
+
+The artifacts remain unpublished CI outputs. A native runner build does not
+prove the portable manylinux compatibility assumed by the upstream wheel
+release helper; distribution compatibility and private consumer qualification
+remain release-pin gates. Passing fork CI does not authorize publication.
+
 The native engine is built once and handed to tests from the same source SHA.
 Python selection is stock `--changed-since` with direct dependents. Rust's
 JavaScript inference tests run only when their crate changes. Bash records CPU
