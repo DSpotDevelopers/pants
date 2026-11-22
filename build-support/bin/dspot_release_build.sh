@@ -70,6 +70,8 @@ time {
   ./pants package src/python/pants:pants-pex
 }
 
+# every PEX the build writes: pants-pex.pex on 2.33, one per interpreter (pants-pex-cp314.pex, ...) on 2.34; a glob
+# that matches nothing stays literal, and the check refuses the missing file
 "${PY:-python3}" build-support/bin/dspot_glibc_floor.py --glibc "${GLIBC}" \
   dist/deploy/wheels/pantsbuild.pants/*/pantsbuild_pants-*-manylinux*.whl \
-  dist/src.python.pants/pants-pex.pex
+  dist/src.python.pants/pants-pex*.pex
