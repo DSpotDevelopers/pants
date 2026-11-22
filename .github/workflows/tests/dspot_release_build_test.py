@@ -50,4 +50,3 @@ def test_the_wrappers_stay_outside_the_checkout_and_no_cached_engine_is_reused()
     assert 'wrappers="${RUNNER_TEMP:?' in script
     assert "build-support/bin/rust/glibc" not in script
     assert 'rm -rf "${HOME}/.cache/pants/native_code"' in script
-

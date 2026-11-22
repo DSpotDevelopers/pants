@@ -43,11 +43,14 @@ if [[ "$(cargo-zigbuild --version 2> /dev/null || true)" != "cargo-zigbuild ${CA
 fi
 zigbuild="$(command -v cargo-zigbuild)"
 
-# The compiler and linker wrappers, as cargo-zigbuild writes its own. They sit untracked under build-support/bin/rust,
-# whose files the engine's native-code cache key hashes (calculate_engine_hash.sh), so natives linked any other way
-# are never reused for this build.
-wrappers="${repo}/build-support/bin/rust/glibc-${GLIBC}"
+# The compiler and linker wrappers, as cargo-zigbuild writes its own, in the runner's temp folder: outside the checkout,
+# whose build-support/bin/rust files the engine hash covers, so the tests job (another checkout of the same source)
+# computes the same hash and takes the natives this job hands it.
+wrappers="${RUNNER_TEMP:?the runner temp folder}/dspot-glibc-${GLIBC}"
 mkdir -p "${wrappers}"
+# The bootstrap reuses a cached engine of the same source whatever it was linked against (its cache key, the engine
+# hash, does not cover the linker), so a release clears that cache and links its own.
+rm -rf "${HOME}/.cache/pants/native_code"
 for tool in cc c++; do
   cat > "${wrappers}/${tool}" << EOF
 #!/bin/sh
