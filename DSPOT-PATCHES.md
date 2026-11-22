@@ -83,8 +83,10 @@ lookup and leading-slash wrapper filename do not provide a working root-project 
   changed only this branch's copy of the workflow, so the first run on the pull request that adds this line
   (45048880245) still ran `main`'s old build step: no zig, no floor check, and its natives named GLIBC_2.39, so it was
   not published either. The release is that pull request's run after DSpotDevelopers/pants#33 put the build on
-  `main`: its head is `+dspot.10`'s release source, and it changes only this record and the workflow test's account of
-  where the workflow comes from.
+  `main`: its head is `+dspot.10`'s release source. It changes this record, the workflow test's account of where the
+  workflow comes from, and where the build script keeps its zig wrappers: its first run linked every native file at
+  GLIBC_2.28 but wrote the wrappers into `build-support/bin/rust`, whose files the engine hash covers, so the tests job
+  (a checkout without them) rebuilt the engine it was handed and failed. They live in the runner's temp folder now.
 
 ## JavaScript test execution environments (patch 9)
 
