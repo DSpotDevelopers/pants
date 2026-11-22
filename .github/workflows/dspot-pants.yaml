@@ -120,16 +120,12 @@ jobs:
         uses: benjyw/setup-protoc@fa4f90fddf8838036cbdeadf1262b9755f6cfb85
         with:
           version: 23.x
+      # The source's own script builds the release (its natives linked against the glibc 2.28 floor, then checked), so
+      # a pull request that changes how the release is built proves it in its own run.
       - name: Build the release from the checked source
         env:
           EXPECTED_HEAD: ${{ needs.source.outputs.head }}
-        run: |
-          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
-          TIMEFORMAT='release elapsed=%R user=%U system=%S seconds'
-          time {
-            ./pants run src/python/pants_release/release.py -- build-wheels
-            ./pants package src/python/pants:pants-pex
-          }
+        run: build-support/bin/dspot_release_build.sh
       - name: Test changed JavaScript inference in Rust
         env:
           BASE: ${{ needs.source.outputs.base }}

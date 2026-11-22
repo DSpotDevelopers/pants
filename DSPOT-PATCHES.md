@@ -51,8 +51,10 @@ lookup and leading-slash wrapper filename do not provide a working root-project 
 - Building:
   - use Pants' own release steps (`.github/workflows/release.yaml`: `release.py build-wheels`, then
     `package src/python/pants:pants-pex`) with `VERSION` set to the label above, on our own machines, never on
-    GitHub-hosted runners. So far the builds ran against a glibc 2.28 sysroot (the manylinux_2_28 floor), not the
-    manylinux container, and every native file's highest symbol was checked to be GLIBC_2.28;
+    GitHub-hosted runners. Every native file is linked against glibc 2.28 (the manylinux_2_28 floor), not in the
+    manylinux container, which our runners refuse: `build-support/bin/dspot_release_build.sh`, run by
+    `dspot-pants.yaml`'s build job, links them through zig's 2.28 stubs, and `dspot_glibc_floor.py` refuses the
+    release when any native file of its wheel or PEX needs a newer glibc;
   - the artifacts' names follow the official ones, `pants.<version>-cp314-<platform>.pex`.
 
 ## Source for this build
@@ -75,6 +77,8 @@ lookup and leading-slash wrapper filename do not provide a working root-project 
 - `+dspot.10` is built by `.github/workflows/dspot-pants.yaml` on the pull request that adds this line: its `build` job runs
   the release steps above on our `dspot` runner and keeps the wheels and PEX as the run's `release-<head>` artifact,
   which is what gets published. Pull requests our worker lines open can start it since DSpotDevelopers/pants#28.
+  #30's own run linked its natives against the runner's glibc 2.39 (`native_engine.so` named GLIBC_2.39), so its
+  artifact was not published; the first run with the glibc 2.28 build is the one that is.
 
 ## JavaScript test execution environments (patch 9)
 
