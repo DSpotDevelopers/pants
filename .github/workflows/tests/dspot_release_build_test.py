@@ -24,7 +24,9 @@ def _build_steps() -> list[dict]:
 
 
 def test_the_build_job_builds_the_release_with_the_sources_script() -> None:
-    (step,) = [s for s in _build_steps() if s.get("name") == "Build the release from the checked source"]
+    (step,) = [
+        s for s in _build_steps() if s.get("name") == "Build the release from the checked source"
+    ]
     assert step["run"].strip() == str(SCRIPT), step["run"]
     assert step["env"]["EXPECTED_HEAD"] == "${{ needs.source.outputs.head }}"
 
@@ -34,6 +36,6 @@ def test_the_script_links_natives_against_the_floor_and_checks_the_wheel_and_pex
     assert 'readonly GLIBC="2.28"' in script
     assert "-target x86_64-linux-gnu.${GLIBC}" in script
     assert 'CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER="${wrappers}/cc"' in script
-    check = script[script.index("dspot_glibc_floor.py"):]
+    check = script[script.index("dspot_glibc_floor.py") :]
     assert '--glibc "${GLIBC}"' in check
     assert "pantsbuild_pants-" in check and "dist/src.python.pants/pants-pex.pex" in check

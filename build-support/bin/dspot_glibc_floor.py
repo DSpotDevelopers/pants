@@ -24,7 +24,10 @@ VERSION = re.compile(rb"GLIBC_(\d+)\.(\d+)(?:\.(\d+))?")
 
 def highest(data: bytes) -> tuple[int, ...] | None:
     """The highest glibc version `data` names, or None when it names none."""
-    found = [tuple(int(part) for part in match.groups() if part is not None) for match in VERSION.finditer(data)]
+    found = [
+        tuple(int(part) for part in match.groups() if part is not None)
+        for match in VERSION.finditer(data)
+    ]
     return max(found) if found else None
 
 
@@ -48,7 +51,9 @@ def problems(paths: list[Path], floor: tuple[int, ...]) -> list[str]:
             found = True
             top = highest(data)
             if top is not None and top > floor:
-                out.append(f"{name}: needs GLIBC_{'.'.join(map(str, top))}, over GLIBC_{'.'.join(map(str, floor))}")
+                out.append(
+                    f"{name}: needs GLIBC_{'.'.join(map(str, top))}, over GLIBC_{'.'.join(map(str, floor))}"
+                )
         if not found:
             out.append(f"{path}: holds no native file ({', '.join(NATIVE)})")
     return out

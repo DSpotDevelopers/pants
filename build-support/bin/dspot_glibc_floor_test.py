@@ -36,17 +36,24 @@ def test_a_native_file_over_the_floor_is_refused_by_name(tmp_path: Path) -> None
 
 def test_a_pex_is_read_through_its_embedded_wheel(tmp_path: Path) -> None:
     deps = ".deps/pantsbuild_pants-2.33.2+dspot.10-cp314-cp314-linux_x86_64.whl/pants"
-    pex = archive(tmp_path / "pants.pex", {
-        f"{deps}/engine/internals/native_engine.so": NEW,
-        f"{deps}/bin/pants_lock": OLD,
-        "__main__.py": b"GLIBC_2.99 in prose is not a native file",
-    })
-    assert problems([pex], FLOOR) == [f"{pex}!{deps}/engine/internals/native_engine.so: needs GLIBC_2.39, over GLIBC_2.28"]
+    pex = archive(
+        tmp_path / "pants.pex",
+        {
+            f"{deps}/engine/internals/native_engine.so": NEW,
+            f"{deps}/bin/pants_lock": OLD,
+            "__main__.py": b"GLIBC_2.99 in prose is not a native file",
+        },
+    )
+    assert problems([pex], FLOOR) == [
+        f"{pex}!{deps}/engine/internals/native_engine.so: needs GLIBC_2.39, over GLIBC_2.28"
+    ]
 
 
 def test_an_archive_with_no_native_file_never_passes(tmp_path: Path) -> None:
     wheel = archive(tmp_path / "empty.whl", {"pants/__init__.py": b""})
-    assert problems([wheel], FLOOR) == [f"{wheel}: holds no native file (native_engine.so, native_client, sandboxer, pants_lock)"]
+    assert problems([wheel], FLOOR) == [
+        f"{wheel}: holds no native file (native_engine.so, native_client, sandboxer, pants_lock)"
+    ]
 
 
 def test_the_command_exits_1_over_the_floor_and_0_at_it(tmp_path: Path) -> None:
