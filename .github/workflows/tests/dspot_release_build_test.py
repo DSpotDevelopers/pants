@@ -4,7 +4,7 @@
 """How DSpot's Pants build makes the release it publishes.
 
 The build job runs one script from the checked-out source, so a pull request changes how the release is built and
-proves it in its own run (`pull_request_target` takes the workflow, never the build, from the base). The script
+proves it in its own run (`pull_request_target` takes the workflow from the default branch, never the build). The script
 links every native file against glibc 2.28, the floor `DSPOT-PATCHES.md` names, and refuses the release when any
 native file of its wheel or PEX needs a newer glibc.
 """

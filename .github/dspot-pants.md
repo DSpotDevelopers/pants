@@ -36,12 +36,17 @@ CPython 3.14 and select it through the upstream source bootstrap's `PY` setting.
 The interpreter belongs to the runner tool cache; no manylinux-only path is used.
 The checked source still drives the release build through `./pants`, rather than
 substituting the runner's installed release for the candidate being tested.
-The build installs its source-pinned Rust toolchain and Protoc as before.
+The build installs its source-pinned Rust toolchain and Protoc as before, then runs
+the checked source's `build-support/bin/dspot_release_build.sh`: it links every
+native file against glibc 2.28 (the manylinux_2_28 floor) through zig, without a
+container, and `build-support/bin/dspot_glibc_floor.py` fails the job when any
+native file of the wheel or PEX needs a newer glibc. The script comes from the
+pull request's head, so a change to how the release is built proves itself in its
+own run; this workflow, like every `pull_request_target` definition, comes from
+this default branch.
 
-The artifacts remain unpublished CI outputs. A native runner build does not
-prove the portable manylinux compatibility assumed by the upstream wheel
-release helper; distribution compatibility and private consumer qualification
-remain release-pin gates. Passing fork CI does not authorize publication.
+The artifacts remain unpublished CI outputs. Consumer qualification remains a
+release-pin gate. Passing fork CI does not authorize publication.
 
 The native engine is built once and handed to tests from the same source SHA.
 Python selection is stock `--changed-since` with direct dependents. Rust's
