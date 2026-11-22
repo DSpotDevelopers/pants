@@ -40,3 +40,6 @@ pex_binary(
     execution_mode="venv",
     resolve="external-tool-upgrade",
 )
+
+# The release build script as a file: only file sources reach a Python test's sandbox.
+files(name="dspot_release_build", sources=["dspot_release_build.sh"])
