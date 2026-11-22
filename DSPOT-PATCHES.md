@@ -68,8 +68,13 @@ lookup and leading-slash wrapper filename do not provide a working root-project 
 - Patch 9 was merged as `4795dd5e5a49f350ddf9b6d7716e2e0cd086a1b7` (DSpotDevelopers/pants#5).
 - Patch 10 was merged as `0ddb1517a9339087227fd4fa7dcb414b7c420a71` and is the approved source of DSpotDevelopers/pants#6 at `d58ac2fc71503d15ea6a9c8aaa079f04e2bd1977`:
   a workspace environment installs its Node.js project once per session.
+- Patch 11 came with DSpotDevelopers/pants#24 (`c19349874`, and `0a1a1c035`'s formatting): DSpotDevelopers/pants#20's change,
+  approved at `97887f08ba` and merged to this fork's main as `a87bb3f648`.
 - Patch 12 is DSpotDevelopers/pants#19, merged as `1d66212c47`, cherry-picked here (`-m 1 -x`): the provider's rules and their test.
 - This release commit changes only this record and `src/python/pants/VERSION`.
+- `+dspot.10` is built by `.github/workflows/dspot-pants.yaml` on the pull request that adds this line: its `build` job runs
+  the release steps above on our `dspot` runner and keeps the wheels and PEX as the run's `release-<head>` artifact,
+  which is what gets published. Pull requests our worker lines open can start it since DSpotDevelopers/pants#28.
 
 ## JavaScript test execution environments (patch 9)
 
