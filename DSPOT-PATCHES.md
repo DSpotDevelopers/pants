@@ -22,6 +22,7 @@ committed `.pants.bootstrap`. There's no wrapper script.
 | 9 | JS/TS/TSX tests select existing execution environments; workspace-safe cache policy, archive extraction and Corepack paths | DSpotDevelopers/pants#5, approved at `455825ce1e72db3777a24e7d7aa6b62de12acadb` | Unblocks Pipeline 200 criterion 4; drop when a pinned upstream release provides equivalent execution-environment, bootstrap-path and cache behavior. |
 | 10 | In a workspace environment, a Node.js project is installed into the checkout once per session (one install of the project, never reused from the process cache), so a new checkout under a warm cache still gets its node_modules | This branch's follow-up to patch 9 (its PR on this fork) | Drop it with patch 9, when a pinned upstream release installs workspace-environment Node.js projects per session. |
 | 11 | `--changed-dependents` never selects a dependent's target generator: upstream drops the changed owners' generators (pantsbuild/pants#15313), and this applies the same rule to the dependents' generators, except one that is a direct owner (a deleted generated file); `changed_integration_test.py::test_change_dependent_in_another_generator` | DSpotDevelopers/pants#20, approved at `97887f08ba144945f672025515cb4f94dc4ddfc8`, merged to this fork's main as `a87bb3f648` | Drop it when a pinned upstream release excludes dependents' target generators from `--changed-dependents`. |
+| 12 | In a workspace environment, the python-build-standalone provider installs its interpreter from the process sandbox's inputs, never from checkout-relative paths the workspace does not hold, so a `python_tests` with `environment="workspace"` gets its interpreter; `python_build_standalone/rules_test.py` | DSpotDevelopers/pants#19, approved at `b6d91e1971`, merged to this fork's main as `1d66212c47` | Drop it when a pinned upstream release installs python-build-standalone interpreters in a workspace environment. |
 
 JSON compiler inputs use stock `file` targets with explicit dependencies. The compiler no longer
 collects `resource` targets as JSON inputs; the existing file-target compiler test covers this path.
@@ -43,7 +44,7 @@ lookup and leading-slash wrapper filename do not provide a working root-project 
   immutable release (immutable releases were enabled on this fork after `+dspot.1` was published). `+dspot.3` adds
   patches 3 and 4; `+dspot.4` adds patch 5; `+dspot.5` adds patches 6 and 7; `+dspot.6` corrects them (#3: config
   discovery inventories sources and configs, never the installed resolve's links). `+dspot.7` adds patch 8
-  from the approved config-input and package/output-validation fix. `+dspot.8` adds patch 9; `+dspot.9` adds patch 10; `+dspot.10` adds patch 11. Every release from `+dspot.2` on is
+  from the approved config-input and package/output-validation fix. `+dspot.8` adds patch 9; `+dspot.9` adds patch 10; `+dspot.10` adds patches 11 and 12. Every release from `+dspot.2` on is
   immutable: the launcher can't check the PEX's hash.
 - When a patch's upstream PR is released, the next build drops it and bumps the `+dspot.N` label. When none is left,
   repositories go back to the plain official version and this branch is retired.
@@ -67,6 +68,7 @@ lookup and leading-slash wrapper filename do not provide a working root-project 
 - Patch 9 was merged as `4795dd5e5a49f350ddf9b6d7716e2e0cd086a1b7` (DSpotDevelopers/pants#5).
 - Patch 10 was merged as `0ddb1517a9339087227fd4fa7dcb414b7c420a71` and is the approved source of DSpotDevelopers/pants#6 at `d58ac2fc71503d15ea6a9c8aaa079f04e2bd1977`:
   a workspace environment installs its Node.js project once per session.
+- Patch 12 is DSpotDevelopers/pants#19, merged as `1d66212c47`, cherry-picked here (`-m 1 -x`): the provider's rules and their test.
 - This release commit changes only this record and `src/python/pants/VERSION`.
 
 ## JavaScript test execution environments (patch 9)
