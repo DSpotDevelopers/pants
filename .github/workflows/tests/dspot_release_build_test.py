@@ -4,7 +4,7 @@
 """How DSpot's Pants build makes the release it publishes.
 
 The build job runs one script from the checked-out source, so a pull request changes how the release is built and
-proves it in its own run (`pull_request_target` takes the workflow, never the build, from the base). The script
+proves it in its own run (`pull_request_target` takes the workflow from the default branch, never the build). The script
 links every native file against glibc 2.28, the floor `DSPOT-PATCHES.md` names, and refuses the release when any
 native file of its wheel or PEX needs a newer glibc.
 """
@@ -39,3 +39,14 @@ def test_the_script_links_natives_against_the_floor_and_checks_the_wheel_and_pex
     check = script[script.index("dspot_glibc_floor.py") :]
     assert '--glibc "${GLIBC}"' in check
     assert "pantsbuild_pants-" in check and "dist/src.python.pants/pants-pex.pex" in check
+
+
+def test_the_wrappers_stay_outside_the_checkout_and_no_cached_engine_is_reused() -> None:
+    """The engine hash covers build-support/bin/rust's files, so wrappers written there change the build's hash but not
+    the tests job's checkout: the tests job then rebuilds the engine it was handed, without a Rust toolchain. The
+    wrappers live in the runner's temp folder instead, and a release clears the bootstrap's native-code cache, so it
+    never reuses an engine of the same source linked against the runner's glibc."""
+    script = SCRIPT.read_text()
+    assert 'wrappers="${RUNNER_TEMP:?' in script
+    assert "build-support/bin/rust/glibc" not in script
+    assert 'rm -rf "${HOME}/.cache/pants/native_code"' in script

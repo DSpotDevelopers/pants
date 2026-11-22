@@ -52,9 +52,10 @@ lookup and leading-slash wrapper filename do not provide a working root-project 
   - use Pants' own release steps (`.github/workflows/release.yaml`: `release.py build-wheels`, then
     `package src/python/pants:pants-pex`) with `VERSION` set to the label above, on our own machines, never on
     GitHub-hosted runners. Every native file is linked against glibc 2.28 (the manylinux_2_28 floor), not in the
-    manylinux container, which our runners refuse: `build-support/bin/dspot_release_build.sh`, run by
-    `dspot-pants.yaml`'s build job, links them through zig's 2.28 stubs, and `dspot_glibc_floor.py` refuses the
-    release when any native file of its wheel or PEX needs a newer glibc;
+    manylinux container, which our runners refuse: `build-support/bin/dspot_release_build.sh`, run by the build job
+    of the default branch's `dspot-pants.yaml` (a `pull_request_target` run reads its workflow from `main`, never
+    from this branch; the script comes from the pull request's head), links them through zig's 2.28 stubs, and
+    `dspot_glibc_floor.py` refuses the release when any native file of its wheel or PEX needs a newer glibc;
   - the artifacts' names follow the official ones, `pants.<version>-cp314-<platform>.pex`.
 
 ## Source for this build
@@ -78,7 +79,14 @@ lookup and leading-slash wrapper filename do not provide a working root-project 
   the release steps above on our `dspot` runner and keeps the wheels and PEX as the run's `release-<head>` artifact,
   which is what gets published. Pull requests our worker lines open can start it since DSpotDevelopers/pants#28.
   #30's own run linked its natives against the runner's glibc 2.39 (`native_engine.so` named GLIBC_2.39), so its
-  artifact was not published; the first run with the glibc 2.28 build is the one that is.
+  artifact was not published; the first run with the glibc 2.28 build is the one that is. DSpotDevelopers/pants#31
+  changed only this branch's copy of the workflow, so the first run on the pull request that adds this line
+  (45048880245) still ran `main`'s old build step: no zig, no floor check, and its natives named GLIBC_2.39, so it was
+  not published either. The release is that pull request's run after DSpotDevelopers/pants#33 put the build on
+  `main`: its head is `+dspot.10`'s release source. It changes this record, the workflow test's account of where the
+  workflow comes from, and where the build script keeps its zig wrappers: its first run linked every native file at
+  GLIBC_2.28 but wrote the wrappers into `build-support/bin/rust`, whose files the engine hash covers, so the tests job
+  (a checkout without them) rebuilt the engine it was handed and failed. They live in the runner's temp folder now.
 
 ## JavaScript test execution environments (patch 9)
 
