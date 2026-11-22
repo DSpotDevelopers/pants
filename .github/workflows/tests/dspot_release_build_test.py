@@ -38,7 +38,8 @@ def test_the_script_links_natives_against_the_floor_and_checks_the_wheel_and_pex
     assert 'CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER="${wrappers}/cc"' in script
     check = script[script.index("dspot_glibc_floor.py") :]
     assert '--glibc "${GLIBC}"' in check
-    assert "pantsbuild_pants-" in check and "dist/src.python.pants/pants-pex.pex" in check
+    # every PEX the build writes: one, pants-pex.pex, on 2.33; one per interpreter (pants-pex-cp314.pex, ...) on 2.34
+    assert "pantsbuild_pants-" in check and "dist/src.python.pants/pants-pex*.pex" in check
 
 
 def test_the_wrappers_stay_outside_the_checkout_and_no_cached_engine_is_reused() -> None:
