@@ -78,7 +78,9 @@ lookup and leading-slash wrapper filename do not provide a working root-project 
   the release steps above on our `dspot` runner and keeps the wheels and PEX as the run's `release-<head>` artifact,
   which is what gets published. Pull requests our worker lines open can start it since DSpotDevelopers/pants#28.
   #30's own run linked its natives against the runner's glibc 2.39 (`native_engine.so` named GLIBC_2.39), so its
-  artifact was not published; the first run with the glibc 2.28 build is the one that is.
+  artifact was not published; the first run with the glibc 2.28 build is the one that is. That run is the one on the
+  pull request that adds this line, after DSpotDevelopers/pants#31: its head is `+dspot.10`'s release source, and it
+  changes only this record.
 
 ## JavaScript test execution environments (patch 9)
 
