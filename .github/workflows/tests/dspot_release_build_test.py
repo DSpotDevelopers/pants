@@ -1,0 +1,39 @@
+# Copyright 2026 Pants project contributors (see CONTRIBUTORS.md).
+# Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+"""How DSpot's Pants build makes the release it publishes.
+
+The build job runs one script from the checked-out source, so a pull request changes how the release is built and
+proves it in its own run (`pull_request_target` takes the workflow, never the build, from the base). The script
+links every native file against glibc 2.28, the floor `DSPOT-PATCHES.md` names, and refuses the release when any
+native file of its wheel or PEX needs a newer glibc.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import yaml
+
+WORKFLOW = Path(".github/workflows/dspot-pants.yaml")
+SCRIPT = Path("build-support/bin/dspot_release_build.sh")
+
+
+def _build_steps() -> list[dict]:
+    return yaml.safe_load(WORKFLOW.read_text())["jobs"]["build"]["steps"]
+
+
+def test_the_build_job_builds_the_release_with_the_sources_script() -> None:
+    (step,) = [s for s in _build_steps() if s.get("name") == "Build the release from the checked source"]
+    assert step["run"].strip() == str(SCRIPT), step["run"]
+    assert step["env"]["EXPECTED_HEAD"] == "${{ needs.source.outputs.head }}"
+
+
+def test_the_script_links_natives_against_the_floor_and_checks_the_wheel_and_pex() -> None:
+    script = SCRIPT.read_text()
+    assert 'readonly GLIBC="2.28"' in script
+    assert "-target x86_64-linux-gnu.${GLIBC}" in script
+    assert 'CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER="${wrappers}/cc"' in script
+    check = script[script.index("dspot_glibc_floor.py"):]
+    assert '--glibc "${GLIBC}"' in check
+    assert "pantsbuild_pants-" in check and "dist/src.python.pants/pants-pex.pex" in check
