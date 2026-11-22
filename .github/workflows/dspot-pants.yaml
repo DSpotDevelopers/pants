@@ -18,13 +18,17 @@ defaults:
 
 jobs:
   source:
+    # The one place that decides who may start this build (its script below checks a dispatch the same way): a pull
+    # request from this repository by an owner, member or collaborator, or by the GitHub App our worker lines open pull
+    # requests as, named by its exact login. Every other job runs only through `needs: source`.
     if: >-
       github.repository == 'DSpotDevelopers/pants'
       && ((github.event_name == 'workflow_dispatch' && startsWith(github.ref, 'refs/heads/'))
           || (github.event_name == 'pull_request_target'
               && (github.event.pull_request.author_association == 'OWNER'
                   || github.event.pull_request.author_association == 'MEMBER'
-                  || github.event.pull_request.author_association == 'COLLABORATOR')
+                  || github.event.pull_request.author_association == 'COLLABORATOR'
+                  || github.event.pull_request.user.login == 'dspot-worker-lines[bot]')
               && github.event.pull_request.head.repo.full_name == github.repository))
     runs-on: [self-hosted, linux, x64, slot-cpus-1]
     timeout-minutes: 5
@@ -62,10 +66,11 @@ jobs:
             const {data: pr} = await github.rest.pulls.get({
               ...context.repo, pull_number: Number(number)
             });
-            if (pr.state !== 'open' || pr.draft
-                || !['OWNER', 'MEMBER', 'COLLABORATOR'].includes(pr.author_association)
+            const trusted = ['OWNER', 'MEMBER', 'COLLABORATOR'].includes(pr.author_association)
+                || (pr.user.type === 'Bot' && pr.user.login === 'dspot-worker-lines[bot]');
+            if (pr.state !== 'open' || pr.draft || !trusted
                 || pr.head.repo.full_name !== context.payload.repository.full_name) {
-              throw new Error('Only ready pull requests by repository owners, members or collaborators from this repository may execute');
+              throw new Error('Only ready pull requests from this repository by its owners, members, collaborators or the workers\' App may execute');
             }
             if (context.eventName === 'workflow_dispatch'
                 && (pr.head.sha !== context.sha
@@ -81,14 +86,6 @@ jobs:
             });
 
   build:
-    if: >-
-      github.repository == 'DSpotDevelopers/pants'
-      && ((github.event_name == 'workflow_dispatch' && startsWith(github.ref, 'refs/heads/'))
-          || (github.event_name == 'pull_request_target'
-              && (github.event.pull_request.author_association == 'OWNER'
-                  || github.event.pull_request.author_association == 'MEMBER'
-                  || github.event.pull_request.author_association == 'COLLABORATOR')
-              && github.event.pull_request.head.repo.full_name == github.repository))
     needs: source
     runs-on: [self-hosted, linux, x64, dspot]
     timeout-minutes: 90
@@ -170,14 +167,6 @@ jobs:
           fi
 
   tests:
-    if: >-
-      github.repository == 'DSpotDevelopers/pants'
-      && ((github.event_name == 'workflow_dispatch' && startsWith(github.ref, 'refs/heads/'))
-          || (github.event_name == 'pull_request_target'
-              && (github.event.pull_request.author_association == 'OWNER'
-                  || github.event.pull_request.author_association == 'MEMBER'
-                  || github.event.pull_request.author_association == 'COLLABORATOR')
-              && github.event.pull_request.head.repo.full_name == github.repository))
     needs: [source, build]
     runs-on: [self-hosted, linux, x64, slot-medium]
     timeout-minutes: 30
@@ -231,15 +220,7 @@ jobs:
           fi
 
   result:
-    if: >-
-      always() && needs.source.result == 'success'
-      && github.repository == 'DSpotDevelopers/pants'
-      && ((github.event_name == 'workflow_dispatch' && startsWith(github.ref, 'refs/heads/'))
-          || (github.event_name == 'pull_request_target'
-              && (github.event.pull_request.author_association == 'OWNER'
-                  || github.event.pull_request.author_association == 'MEMBER'
-                  || github.event.pull_request.author_association == 'COLLABORATOR')
-              && github.event.pull_request.head.repo.full_name == github.repository))
+    if: always() && needs.source.result == 'success'
     needs: [source, build, tests]
     runs-on: [self-hosted, linux, x64, slot-cpus-1]
     timeout-minutes: 5
