@@ -124,6 +124,45 @@ def test_compiler_digest_excludes_unrelated_declared_assets() -> None:
     assert "basic_project/src/index.ts" in snapshot.files
 
 
+def test_compiler_receives_imported_javascript_and_no_unimported_module() -> None:
+    runner = _create_rule_runner("pnpm")
+    files = _load_project_test_files("basic_project")
+    config = json.loads(files["basic_project/tsconfig.json"])
+    config["compilerOptions"].update(allowJs=True, checkJs=False)
+    files["basic_project/tsconfig.json"] = json.dumps(config)
+    files["basic_project/src/index.ts"] = (
+        "import {answer} from './values.mjs';\nexport const result: number = answer;\n"
+    )
+    files["basic_project/src/values.mjs"] = "export const answer = 42;\n"
+    files["basic_project/src/unimported.mjs"] = "export const elsewhere = 'not this program';\n"
+    files["basic_project/src/BUILD"] += '\njavascript_sources(name="js")\n'
+    runner.write_files(files)
+    target = runner.get_target(
+        Address("basic_project/src", target_name="ts_sources", relative_file_path="index.ts")
+    )
+    original = check._prepare_tsc_build_process
+    processes: list[Process] = []
+
+    async def capture(*args: Any, **kwargs: Any) -> Process:
+        process = await original(*args, **kwargs)
+        processes.append(process)
+        return process
+
+    with patch.object(check, "_prepare_tsc_build_process", capture):
+        results = runner.request(
+            CheckResults, [TypeScriptCheckRequest([TypeScriptCheckFieldSet.create(target)])]
+        )
+    assert len(results.results) == 1
+    result = results.results[0]
+    assert result.exit_code == 0, result.stdout + result.stderr
+    assert len(processes) == 1
+    snapshot = runner.request(Snapshot, [processes[0].input_digest])
+    # The compiler gets what the checked sources import, through their dependencies; a module
+    # of the same project that nothing imports is no input of this check.
+    assert "basic_project/src/values.mjs" in snapshot.files
+    assert "basic_project/src/unimported.mjs" not in snapshot.files
+
+
 JS_TYPE_ERROR_FILE_NUMBER_TO_STRING = (
     'let x = "hello";\nx = 42; // Type error: cannot assign number to string\n'
 )
