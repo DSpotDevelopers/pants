@@ -4,18 +4,18 @@ This is official Pants **2.33.2** plus the reviewed fixes below. Every fix has a
 Upstream submission is optional and belongs only to the owner; it is not a build or approval gate.
 Apart from the version label and this file, nothing else differs from the `release_2.33.2` tag.
 
-Version: `2.33.2+dspot.10`. A repository pins it like any Pants version: `pants_version = "2.33.2+dspot.10"` in
+Version: `2.33.2+dspot.11`. A repository pins it like any Pants version: `pants_version = "2.33.2+dspot.11"` in
 `pants.toml`. The stock scie-pants launcher fetches it through `PANTS_BOOTSTRAP_URLS`, set in the repository's
 committed `.pants.bootstrap`. There's no wrapper script.
 
 | # | Patch (commits on this branch) | Review / upstream status | Exit |
 |---|---|---|---|
-| 1 | Install the transitive dependencies of pnpm workspace packages (its test and fix commits; the PR's 2.34 docs commit is left out) | pantsbuild/pants#23754 merged on 2026-11-16 as `32a5115f0bc752b48501a78b3824b9bef1465235` | Remove our copy at the next upstream version pin: 2.34 if its branch receives #23754 before the pin, otherwise 2.35. The measured 2.34 branch at `453ca656` does not yet contain its workspace-dependencies selector. |
+| 1 | Install the transitive dependencies of pnpm workspace packages: upstream's own change, byte for byte (`nodejs_project_environment.py`, `package_manager.py` and both tests; its `docs/notes/2.35.x.md` entry is left out) | pantsbuild/pants#23754, merged on 2026-11-16 as `32a5115f0bc752b48501a78b3824b9bef1465235`; cherry-picked here in `+dspot.11` in place of our earlier copy, which reached the same behaviour by its own pnpm-only branch | Drops by itself at the first upstream pin that contains `32a5115f0` (it is on main, not on the 2.34.x branch: 2.35). |
 | 2 | JS inference finds the owner of an imported non-module file, such as `./x.css` or `./rows.json` | Branch `dspot/js-infer-non-js-files` on this fork, on Pants main; the issue and PR are posted by a person (Pants requires human-written text) | Drop it when a Pants release we pin contains the upstream fix. |
 | 3 | JS inference reads a bundler query's file: `./App.tsx?raw`, `./logo.svg?url` | Branch `dspot/js-infer-bundler-query` (on patch 2's), posted the same way | Drop it when a Pants release we pin contains the upstream fix. |
 | 4 | A TypeScript `.js` specifier infers the source it compiles from: `./errors.js` -> `errors.ts`/`.tsx`/`.d.ts`, `./View.jsx` -> `View.tsx` | Branch `dspot/js-infer-ts-js-specifier` (on patch 3's), posted the same way | Drop it when a Pants release we pin contains the upstream fix. |
 | 5 | TypeScript check keeps the repository-root Node project and a sandbox-relative root wrapper path (`9b4d1aed7`, `cfe58a301`) | Root-project support retained; subfolder projects use stock resolve lookup and unnamed package targets | Drop it when a Pants release we pin contains equivalent root-project/root-wrapper support. |
-| 6 | Preserve TypeScript compiler inputs: imported JavaScript | DSpotDevelopers/pants#2, approved at `3fcae484e9`, and #3 (no snapshot of the installed resolve in config discovery), approved at `097d64486b`; upstream's 2.34 branch includes transitive compiler inputs | Remove the compiler-input copy at the next 2.34 pin, validating the focused compiler cases against upstream's transitive source hydration. Keep config-program selection under patch 7 until upstream provides it. |
+| 6 | Preserve TypeScript compiler inputs: imported JavaScript | DSpotDevelopers/pants#2, approved at `3fcae484e9`, and #3 (no snapshot of the installed resolve in config discovery), approved at `097d64486b`; upstream's 2.34 branch hydrates the checked targets' transitive dependencies (`029bd904d`), which does not cover our case: a TypeScript source importing a pnpm workspace package of the same Node project (`@flowsev/plugin-sdk`) reaches that package's `package_json` target, not its JS and declaration sources. Tried in `+dspot.11`'s pull request: `pants check workflows/accountancy-processes/plugin::` on dspot-company-data went from 34 to 132 errors, the 98 new ones all TS2305 `Module '"@flowsev/plugin-sdk"' has no exported member …` | Keep it at the 2.34 pin unless upstream hydrates a workspace package's sources for its importers; re-run that check on the pin. Keep config-program selection under patch 7 until upstream provides it. |
 | 7 | TypeScript check builds the configs owning the selected sources, with their declared project references, rather than every member of a Node resolve | DSpotDevelopers/pants#2, approved at `3fcae484e9`, and #3 (no snapshot of the installed resolve in config discovery), approved at `097d64486b`; coordinator/owner owns external review and submission | Drop it when a Pants release we pin separates TypeScript programs from Node resolves. |
 | 8 | TypeScript check consumes generated and packaged data dependencies of its active tsconfigs; package-shell targets build through package, never source codegen; output validation matches captured names without walking dependency links | DSpotDevelopers/pants#4, approved at `576f692d81524e907570921aa28bedfb26430f3c`; upstream preparation is parked under the owner's correction | Drop it when a pinned Pants release carries equivalent generated config-input and package/source separation. |
 
@@ -44,7 +44,7 @@ lookup and leading-slash wrapper filename do not provide a working root-project 
   immutable release (immutable releases were enabled on this fork after `+dspot.1` was published). `+dspot.3` adds
   patches 3 and 4; `+dspot.4` adds patch 5; `+dspot.5` adds patches 6 and 7; `+dspot.6` corrects them (#3: config
   discovery inventories sources and configs, never the installed resolve's links). `+dspot.7` adds patch 8
-  from the approved config-input and package/output-validation fix. `+dspot.8` adds patch 9; `+dspot.9` adds patch 10; `+dspot.10` adds patches 11 and 12. Every release from `+dspot.2` on is
+  from the approved config-input and package/output-validation fix. `+dspot.8` adds patch 9; `+dspot.9` adds patch 10; `+dspot.10` adds patches 11 and 12. `+dspot.11` replaces patch 1 with upstream's merged #23754 (owner, 16 Nov: where Pants already has a way, we use theirs); patch 6 stays, as its row says why. Every release from `+dspot.2` on is
   immutable: the launcher can't check the PEX's hash.
 - When a patch's upstream PR is released, the next build drops it and bumps the `+dspot.N` label. When none is left,
   repositories go back to the plain official version and this branch is retired.
@@ -74,6 +74,7 @@ lookup and leading-slash wrapper filename do not provide a working root-project 
 - Patch 11 came with DSpotDevelopers/pants#24 (`c19349874`, and `0a1a1c035`'s formatting): DSpotDevelopers/pants#20's change,
   approved at `97887f08ba` and merged to this fork's main as `a87bb3f648`.
 - Patch 12 is DSpotDevelopers/pants#19, merged as `1d66212c47`, cherry-picked here (`-m 1 -x`): the provider's rules and their test.
+- `+dspot.11` takes upstream's way for patch 1 (owner DM 1034404, 16 Nov): its files are upstream's `32a5115f0` (pantsbuild/pants#23754). Patch 6 was tried with upstream 2.34.x's transitive hydration and kept: row 6 names the failing case.
 - This release commit changes only this record and `src/python/pants/VERSION`.
 - `+dspot.10` is built by `.github/workflows/dspot-pants.yaml` on the pull request that adds this line: its `build` job runs
   the release steps above on our `dspot` runner and keeps the wheels and PEX as the run's `release-<head>` artifact,
