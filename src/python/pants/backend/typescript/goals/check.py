@@ -316,30 +316,17 @@ async def _collect_project_targets(
     *,
     include_assets: bool = False,
 ) -> list[Target]:
-    has_check_js = any(
-        ts_config.allow_js and ts_config.check_js for ts_config in project_ts_configs
-    )
-
-    if include_assets:
-        # Declarations and data a program may name without an import, found by their filenames.
-        compiler_extensions = TS_FILE_EXTENSIONS + JS_FILE_EXTENSIONS + (".tsx", ".jsx", ".json")
-        targets = [
-            target
-            for target in all_targets
-            if target.has_field(FileSourceField)
-            and target[FileSourceField].file_path.endswith(compiler_extensions)
-        ]
-    elif has_check_js:
-        targets = [target for target in all_targets if target.has_field(JSRuntimeSourceField)]
-    else:
-        targets = [
-            target
-            for target in all_targets
-            if (
-                target.has_field(TypeScriptSourceField)
-                or target.has_field(TypeScriptTestSourceField)
-            )
-        ]
+    # checkJs controls diagnostics, not whether JS modules are compiler inputs. TypeScript
+    # still follows imports into JS with allowJs, and declarations can sit beside those modules.
+    compiler_extensions = TS_FILE_EXTENSIONS + JS_FILE_EXTENSIONS + (".tsx", ".jsx", ".json")
+    targets = [
+        target
+        for target in all_targets
+        if target.has_field(JSRuntimeSourceField)
+        or include_assets
+        and target.has_field(FileSourceField)
+        and target[FileSourceField].file_path.endswith(compiler_extensions)
+    ]
 
     target_owning_packages = await concurrently(
         find_owning_package(OwningNodePackageRequest(target.address), **implicitly())
@@ -354,44 +341,34 @@ async def _collect_project_targets(
             if target_project == project:
                 project_targets.append(target)
 
+    has_check_js = any(config.allow_js and config.check_js for config in project_ts_configs)
+    if (
+        not include_assets
+        and not has_check_js
+        and not any(
+            target.has_field(TypeScriptSourceField) or target.has_field(TypeScriptTestSourceField)
+            for target in project_targets
+        )
+    ):
+        return []
+
     return project_targets
 
 
 async def _hydrate_project_sources(
     project_targets: list[Target],
 ) -> Digest:
-    # Include the transitive closure so codegen dependencies (e.g. protobuf -> TypeScript) are
-    # generated and type-checked. TypeScriptSourceField subclasses JSRuntimeSourceField, so
-    # for_sources_types=(JSRuntimeSourceField,) + enable_codegen picks up both native JS/TS sources
-    # and codegen-produced TypeScript.
-    transitive = await transitive_targets(
-        TransitiveTargetsRequest([t.address for t in project_targets]), **implicitly()
-    )
     workspace_target_sources = await concurrently(
         hydrate_sources(
-            HydrateSourcesRequest(
-                target[SourcesField],
-                for_sources_types=(JSRuntimeSourceField,),
-                enable_codegen=True,
-            ),
+            HydrateSourcesRequest(target[SourcesField]),
             **implicitly(),
         )
-        for target in transitive.closure
-        if target.has_field(SourcesField)
+        for target in project_targets
     )
 
     return await merge_digests(
         MergeDigests([sources.snapshot.digest for sources in workspace_target_sources])
     )
-
-
-async def _hydrate_asset_sources(asset_targets: list[Target]) -> Digest:
-    """The selected programs' declaration and data files, as their file targets hold them."""
-    asset_sources = await concurrently(
-        hydrate_sources(HydrateSourcesRequest(target[SourcesField]), **implicitly())
-        for target in asset_targets
-    )
-    return await merge_digests(MergeDigests([sources.snapshot.digest for sources in asset_sources]))
 
 
 async def _prepare_compilation_input(
@@ -669,7 +646,7 @@ async def _typecheck_single_project(
             stderr="",
             partition_description=f"TypeScript check on {project.root_dir} (no selected source in a TypeScript program)",
         )
-    actual_assets = await _hydrate_asset_sources(
+    actual_assets = await _hydrate_project_sources(
         [target for path, target in assets.items() if path in selection.source_files]
     )
     selected_configs = await path_globs_to_digest(PathGlobs(selection.config_files), **implicitly())
