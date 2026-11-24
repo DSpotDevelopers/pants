@@ -4,7 +4,7 @@ This is official Pants **2.33.2** plus the reviewed fixes below. Every fix has a
 Upstream submission is optional and belongs only to the owner; it is not a build or approval gate.
 Apart from the version label and this file, nothing else differs from the `release_2.33.2` tag.
 
-Version: `2.33.2+dspot.11`. A repository pins it like any Pants version: `pants_version = "2.33.2+dspot.11"` in
+Version: `2.33.2+dspot.12`. A repository pins it like any Pants version: `pants_version = "2.33.2+dspot.12"` in
 `pants.toml`. The stock scie-pants launcher fetches it through `PANTS_BOOTSTRAP_URLS`, set in the repository's
 committed `.pants.bootstrap`. There's no wrapper script.
 
@@ -23,6 +23,7 @@ committed `.pants.bootstrap`. There's no wrapper script.
 | 10 | In a workspace environment, a Node.js project is installed into the checkout once per session (one install of the project, never reused from the process cache), so a new checkout under a warm cache still gets its node_modules | This branch's follow-up to patch 9 (its PR on this fork) | Drop it with patch 9, when a pinned upstream release installs workspace-environment Node.js projects per session. |
 | 11 | `--changed-dependents` never selects a dependent's target generator: upstream drops the changed owners' generators (pantsbuild/pants#15313), and this applies the same rule to the dependents' generators, except one that is a direct owner (a deleted generated file); `changed_integration_test.py::test_change_dependent_in_another_generator` | DSpotDevelopers/pants#20, approved at `97887f08ba144945f672025515cb4f94dc4ddfc8`, merged to this fork's main as `a87bb3f648` | Drop it when a pinned upstream release excludes dependents' target generators from `--changed-dependents`. |
 | 12 | In a workspace environment, the python-build-standalone provider installs its interpreter from the process sandbox's inputs, never from checkout-relative paths the workspace does not hold, so a `python_tests` with `environment="workspace"` gets its interpreter; `python_build_standalone/rules_test.py` | DSpotDevelopers/pants#19, approved at `b6d91e1971`, merged to this fork's main as `1d66212c47` | Drop it when a pinned upstream release installs python-build-standalone interpreters in a workspace environment. |
+| 13 | A stylesheet's links infer their targets: `@import "@flowsev/design"` (a trailing `theme(...)` or `layer(...)` aside) and Tailwind's `@source "@flowsev/ui"` infer the package's node target, as a JavaScript import of the package does; `@import "./tokens.css"` infers the file's owner, and a relative link to a package's folder (Tailwind's `@source "../ui"`) that package; links resolve from the stylesheet's own folder, whichever target owns it; `@source not` links nothing. It reads the `.css` source of a `file` or `resource` target (`dependency_inference/rules.py`, `infer_stylesheet_dependencies`; eight cells in `rules_test.py`) | This fork's pull request; upstream submission optional and the owner's | Drop it when a Pants release we pin infers stylesheet `@import`/`@source` links. |
 
 JSON compiler inputs use stock `file` targets with explicit dependencies. The compiler no longer
 collects `resource` targets as JSON inputs; the existing file-target compiler test covers this path.
@@ -44,7 +45,7 @@ lookup and leading-slash wrapper filename do not provide a working root-project 
   immutable release (immutable releases were enabled on this fork after `+dspot.1` was published). `+dspot.3` adds
   patches 3 and 4; `+dspot.4` adds patch 5; `+dspot.5` adds patches 6 and 7; `+dspot.6` corrects them (#3: config
   discovery inventories sources and configs, never the installed resolve's links). `+dspot.7` adds patch 8
-  from the approved config-input and package/output-validation fix. `+dspot.8` adds patch 9; `+dspot.9` adds patch 10; `+dspot.10` adds patches 11 and 12. `+dspot.11` replaces patch 1 with upstream's merged #23754 (owner, 16 Nov: where Pants already has a way, we use theirs); patch 6 stays, as its row says why. Every release from `+dspot.2` on is
+  from the approved config-input and package/output-validation fix. `+dspot.8` adds patch 9; `+dspot.9` adds patch 10; `+dspot.10` adds patches 11 and 12. `+dspot.11` replaces patch 1 with upstream's merged #23754 (owner, 16 Nov: where Pants already has a way, we use theirs); patch 6 stays, as its row says why. `+dspot.12` adds patch 13. Every release from `+dspot.2` on is
   immutable: the launcher can't check the PEX's hash.
 - When a patch's upstream PR is released, the next build drops it and bumps the `+dspot.N` label. When none is left,
   repositories go back to the plain official version and this branch is retired.
@@ -75,6 +76,8 @@ lookup and leading-slash wrapper filename do not provide a working root-project 
   approved at `97887f08ba` and merged to this fork's main as `a87bb3f648`.
 - Patch 12 is DSpotDevelopers/pants#19, merged as `1d66212c47`, cherry-picked here (`-m 1 -x`): the provider's rules and their test.
 - `+dspot.11` takes upstream's way for patch 1 (owner DM 1034404, 16 Nov): its files are upstream's `32a5115f0` (pantsbuild/pants#23754). Patch 6 was tried with upstream 2.34.x's transitive hydration and kept: row 6 names the failing case.
+- Patch 13 is this fork's stylesheet-link inference (`+dspot.12`): the company's app lane selects an app when a design
+  library it styles itself with changes, which stock inference cannot see (it reads JavaScript and TypeScript only).
 - This release commit changes only this record and `src/python/pants/VERSION`.
 - `+dspot.10` is built by `.github/workflows/dspot-pants.yaml` on the pull request that adds this line: its `build` job runs
   the release steps above on our `dspot` runner and keeps the wheels and PEX as the run's `release-<head>` artifact,

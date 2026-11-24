@@ -5,6 +5,7 @@ from __future__ import annotations
 import itertools
 import logging
 import os.path
+import re
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import PurePath
@@ -34,6 +35,7 @@ from pants.backend.typescript import tsconfig
 from pants.backend.typescript.target_types import TS_FILE_EXTENSIONS
 from pants.backend.typescript.tsconfig import ParentTSConfigRequest, TSConfig, find_parent_ts_config
 from pants.build_graph.address import Address
+from pants.core.target_types import AssetSourceField
 from pants.core.util_rules.unowned_dependency_behavior import (
     UnownedDependencyError,
     UnownedDependencyUsage,
@@ -49,9 +51,10 @@ from pants.engine.internals.graph import (
 from pants.engine.internals.native_dep_inference import JavascriptDependencyCandidate
 from pants.engine.internals.native_engine import InferenceMetadata, NativeDependenciesRequest
 from pants.engine.internals.selectors import concurrently
-from pants.engine.intrinsics import parse_javascript_deps, path_globs_to_paths
+from pants.engine.intrinsics import get_digest_contents, parse_javascript_deps, path_globs_to_paths
 from pants.engine.rules import Rule, collect_rules, implicitly, rule
 from pants.engine.target import (
+    Dependencies,
     FieldSet,
     HydrateSourcesRequest,
     InferDependenciesRequest,
@@ -88,6 +91,20 @@ class JSSourceInferenceFieldSet(FieldSet):
 
 class InferJSDependenciesRequest(InferDependenciesRequest):
     infer_from = JSSourceInferenceFieldSet
+
+
+@dataclass(frozen=True)
+class StylesheetInferenceFieldSet(FieldSet):
+    """A `file` or `resource` holding a stylesheet, which links what it styles with."""
+
+    required_fields = (AssetSourceField, Dependencies)
+
+    source: AssetSourceField
+    dependencies: Dependencies
+
+
+class InferStylesheetDependenciesRequest(InferDependenciesRequest):
+    infer_from = StylesheetInferenceFieldSet
 
 
 @rule
@@ -269,6 +286,81 @@ def _is_node_builtin_module(import_string: str) -> bool:
     return import_string.startswith("node:")
 
 
+_CSS_COMMENT = re.compile(r"/\*.*?\*/", re.DOTALL)
+# `@import "x"`, `@import url("x")` (a trailing `theme(...)` or `layer(...)` aside), and Tailwind's `@source "x"`;
+# Tailwind's `@source not "x"` excludes a path and links nothing
+_CSS_LINK = re.compile(r"""@(?:import\s+(?:url\(\s*)?|source\s+)(["'])([^"']+)\1""")
+
+
+def _stylesheet_links(text: str) -> frozenset[str]:
+    """The files and packages a stylesheet links: never a URL, an absolute path or inline data."""
+    return frozenset(
+        link
+        for link in (match.group(2) for match in _CSS_LINK.finditer(_CSS_COMMENT.sub("", text)))
+        if "://" not in link and not link.startswith(("/", "data:", "#"))
+    )
+
+
+def _package_name(specifier: str) -> str:
+    """The package a bare specifier names: `@scope/name` of `@scope/name/sub`, `name` of `name/sub`."""
+    if specifier.startswith("@"):
+        return "/".join(specifier.split("/")[:2])
+    return specifier.partition("/")[0]
+
+
+@rule
+async def infer_stylesheet_dependencies(
+    request: InferStylesheetDependenciesRequest,
+    nodejs_infer: NodeJSInfer,
+) -> InferredDependencies:
+    source = request.field_set.source
+    if not nodejs_infer.imports or not (
+        isinstance(source.value, str) and source.value.endswith(".css")
+    ):
+        return InferredDependencies(())
+    sources = await hydrate_sources(HydrateSourcesRequest(source), **implicitly())
+    contents = await get_digest_contents(sources.snapshot.digest)
+    links = _stylesheet_links(
+        "".join(entry.content.decode("utf-8", errors="replace") for entry in contents)
+    )
+    if not links:
+        return InferredDependencies(())
+    folder = os.path.dirname(source.file_path)
+    relative = sorted(link for link in links if link.startswith("."))
+    packages = sorted(link for link in links if not link.startswith("."))
+    # Node resolves a stylesheet's links from the file's folder, whichever target owns it
+    candidate_pkgs = await map_candidate_node_packages(
+        RequestNodePackagesCandidateMap(Address(folder)), **implicitly()
+    )
+    owners = await concurrently(
+        find_owners(OwnersRequest((os.path.normpath(os.path.join(folder, link)),)), **implicitly())
+        for link in relative
+    )
+    found: dict[str, tuple[Address, ...]] = dict(zip(relative, (tuple(owned) for owned in owners)))
+    # a folder no file owns may be a package's root (Tailwind's `@source "../ui"` scans it): that package
+    folders = [link for link in relative if not found[link]]
+    roots = await concurrently(
+        find_owning_package(
+            OwningNodePackageRequest(Address(os.path.normpath(os.path.join(folder, link))))
+        )
+        for link in folders
+    )
+    for link, root in zip(folders, roots):
+        path = os.path.normpath(os.path.join(folder, link))
+        if root.target is not None and root.target.address.spec_path == path:
+            name = root.target[NodePackageNameField].value
+            found[link] = (candidate_pkgs[name],) if name in candidate_pkgs else ()
+    for link in packages:
+        name = _package_name(link)
+        found[link] = (candidate_pkgs[name],) if name in candidate_pkgs else ()
+    _handle_unowned_imports(
+        request.field_set.address,
+        nodejs_infer.unowned_dependency_behavior,
+        frozenset(link for link, addresses in found.items() if not addresses),
+    )
+    return InferredDependencies(itertools.chain.from_iterable(found.values()))
+
+
 @rule
 async def infer_js_source_dependencies(
     request: InferJSDependenciesRequest,
@@ -330,4 +422,5 @@ def rules() -> Iterable[Rule | UnionRule]:
         *tsconfig.rules(),
         UnionRule(InferDependenciesRequest, InferNodePackageDependenciesRequest),
         UnionRule(InferDependenciesRequest, InferJSDependenciesRequest),
+        UnionRule(InferDependenciesRequest, InferStylesheetDependenciesRequest),
     ]
