@@ -1089,3 +1089,11 @@ def test_a_stylesheet_resolves_packages_from_its_own_folder_whoever_owns_it(
     assert get_inferred_stylesheet_dependencies(
         rule_runner, Address("apps", target_name="tree", relative_file_path="costs/src/index.css")
     ) == {Address("apps/costs", generated_name="tailwindcss")}
+
+
+def test_a_tailwind_source_of_a_package_folder_infers_the_package(rule_runner: RuleRunner) -> None:
+    # Tailwind's `@source` also takes a folder to scan; a folder that is a package is that package
+    given_design_package_and_app(rule_runner, '@source "../../../packages/design";\n')
+    assert get_inferred_stylesheet_dependencies(
+        rule_runner, Address("apps/costs/src", target_name="styles", relative_file_path="index.css")
+    ) == {Address("packages/design", generated_name="__flowsev/design")}
