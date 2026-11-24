@@ -334,6 +334,19 @@ async def infer_stylesheet_dependencies(
         for link in relative
     )
     found: dict[str, tuple[Address, ...]] = dict(zip(relative, (tuple(owned) for owned in owners)))
+    # a folder no file owns may be a package's root (Tailwind's `@source "../ui"` scans it): that package
+    folders = [link for link in relative if not found[link]]
+    roots = await concurrently(
+        find_owning_package(
+            OwningNodePackageRequest(Address(os.path.normpath(os.path.join(folder, link))))
+        )
+        for link in folders
+    )
+    for link, root in zip(folders, roots):
+        path = os.path.normpath(os.path.join(folder, link))
+        if root.target is not None and root.target.address.spec_path == path:
+            name = root.target[NodePackageNameField].value
+            found[link] = (candidate_pkgs[name],) if name in candidate_pkgs else ()
     for link in packages:
         name = _package_name(link)
         found[link] = (candidate_pkgs[name],) if name in candidate_pkgs else ()
