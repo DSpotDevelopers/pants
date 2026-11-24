@@ -1070,3 +1070,22 @@ def test_a_file_that_is_not_a_stylesheet_infers_nothing(rule_runner: RuleRunner)
         )
         == set()
     )
+
+
+def test_a_stylesheet_resolves_packages_from_its_own_folder_whoever_owns_it(
+    rule_runner: RuleRunner,
+) -> None:
+    # Node resolves a stylesheet's imports from the file's folder: a target declared above the app's
+    # package (a whole-tree `resources`) still reaches the app's third-party packages.
+    given_design_package_and_app(rule_runner, '@import "tailwindcss";\n')
+    rule_runner.write_files(
+        {
+            "apps/BUILD": "resources(name='tree', sources=['costs/src/*.css'])",
+            "apps/costs/package.json": given_package(
+                "costs", "0.0.1", dependencies={"tailwindcss": "4.0.0"}
+            ),
+        }
+    )
+    assert get_inferred_stylesheet_dependencies(
+        rule_runner, Address("apps", target_name="tree", relative_file_path="costs/src/index.css")
+    ) == {Address("apps/costs", generated_name="tailwindcss")}
