@@ -7,6 +7,12 @@ from pants.backend.python.target_types import (
     PythonTestTarget,
     PythonTestUtilsGeneratorTarget,
 )
+from pants.core.target_types import (
+    FilesGeneratorTarget,
+    FileTarget,
+    ResourcesGeneratorTarget,
+    ResourceTarget,
+)
 from pants.engine.target import BoolField
 
 
@@ -23,4 +29,8 @@ def rules():
         PythonTestsGeneratorTarget.register_plugin_field(SkipRuffCheckField),
         PythonTestTarget.register_plugin_field(SkipRuffCheckField),
         PythonTestUtilsGeneratorTarget.register_plugin_field(SkipRuffCheckField),
+        FileTarget.register_plugin_field(SkipRuffCheckField),
+        FilesGeneratorTarget.register_plugin_field(SkipRuffCheckField),
+        ResourceTarget.register_plugin_field(SkipRuffCheckField),
+        ResourcesGeneratorTarget.register_plugin_field(SkipRuffCheckField),
     ]
