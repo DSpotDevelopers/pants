@@ -292,6 +292,19 @@ class Ruff(TemplatedExternalTool):
             """
         ),
     )
+    check_python_assets = BoolOption(
+        default=False,
+        advanced=True,
+        help=softwrap(
+            """
+            If true, `ruff check` also lints the `.py` files owned by `file` and `resource`
+            targets (fixtures and other Python read as data), as running Ruff over the whole
+            repository would. By default only Python targets' sources are checked.
+
+            A `file` or `resource` target opts out with `skip_ruff_check=True` or `skip_ruff=True`.
+            """
+        ),
+    )
 
     def config_request(self, dirs: Iterable[str]) -> ConfigFilesRequest:
         # See https://github.com/astral-sh/ruff#configuration for how ruff discovers

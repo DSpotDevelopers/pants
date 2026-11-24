@@ -20,6 +20,7 @@ from pants.backend.python.target_types import (
 from pants.backend.python.util_rules import pex
 from pants.core.goals.fix import FixResult, FixTargetsRequest
 from pants.core.goals.lint import REPORT_DIR, LintResult, LintTargetsRequest
+from pants.core.target_types import AssetSourceField
 from pants.core.util_rules.partitions import Partition, PartitionerType, Partitions
 from pants.core.util_rules.source_files import SourceFilesRequest, determine_source_files
 from pants.engine.fs import (
@@ -70,6 +71,40 @@ class RuffLintRequest(LintTargetsRequest):
     @classproperty
     def tool_id(cls) -> str:
         return "ruff-check"
+
+
+@dataclass(frozen=True)
+class RuffCheckPythonAssetFieldSet(FieldSet):
+    """A `.py` file owned by a `file` or `resource` target, linted when
+    `[ruff].check_python_assets` is set."""
+
+    required_fields = (AssetSourceField,)
+
+    source: AssetSourceField
+
+    @classmethod
+    def opt_out(cls, tgt: Target) -> bool:
+        source = tgt[AssetSourceField].value
+        return (
+            not isinstance(source, str)
+            or PurePath(source).suffix != ".py"
+            or tgt.get(SkipRuffCheckField).value
+            or tgt.get(SkipRuffField).value
+        )
+
+
+class RuffLintPythonAssetsRequest(LintTargetsRequest):
+    field_set_type = RuffCheckPythonAssetFieldSet
+    tool_subsystem = Ruff  # type: ignore[assignment]
+    partitioner_type = PartitionerType.CUSTOM
+
+    @classproperty
+    def tool_name(cls) -> str:
+        return RuffLintRequest.tool_name
+
+    @classproperty
+    def tool_id(cls) -> str:
+        return RuffLintRequest.tool_id
 
 
 class RuffFixRequest(FixTargetsRequest):
@@ -160,9 +195,18 @@ async def ruff_fix(request: RuffFixRequest.Batch, ruff: Ruff, platform: Platform
     return await FixResult.create(request, result)
 
 
-@rule(desc="Lint with `ruff check`", level=LogLevel.DEBUG)
-async def ruff_lint(
-    request: RuffLintRequest.Batch[RuffCheckFieldSet, Any],
+@rule
+async def partition_ruff_lint_python_assets(
+    request: RuffLintPythonAssetsRequest.PartitionRequest[RuffCheckPythonAssetFieldSet],
+    ruff: Ruff,
+) -> Partitions[RuffCheckPythonAssetFieldSet, Any]:
+    if ruff.skip or not ruff.check_python_assets:
+        return Partitions()
+    return Partitions.single_partition(request.field_sets)
+
+
+async def _lint_with_ruff(
+    request: RuffLintRequest.Batch | RuffLintPythonAssetsRequest.Batch,
     ruff: Ruff,
     platform: Platform,
 ) -> LintResult:
@@ -185,10 +229,32 @@ async def ruff_lint(
     return LintResult.create(request, result, report=report)
 
 
+@rule(desc="Lint with `ruff check`", level=LogLevel.DEBUG)
+async def ruff_lint(
+    request: RuffLintRequest.Batch[RuffCheckFieldSet, Any],
+    ruff: Ruff,
+    platform: Platform,
+) -> LintResult:
+    return await _lint_with_ruff(request, ruff, platform)
+
+
+@rule(
+    desc="Lint Python files of `file` and `resource` targets with `ruff check`",
+    level=LogLevel.DEBUG,
+)
+async def ruff_lint_python_assets(
+    request: RuffLintPythonAssetsRequest.Batch[RuffCheckPythonAssetFieldSet, Any],
+    ruff: Ruff,
+    platform: Platform,
+) -> LintResult:
+    return await _lint_with_ruff(request, ruff, platform)
+
+
 def rules():
     return (
         *collect_rules(),
         *RuffFixRequest.rules(),
         *RuffLintRequest.rules(),
+        *RuffLintPythonAssetsRequest.rules(),
         *pex.rules(),
     )
