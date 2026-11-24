@@ -26,15 +26,23 @@ from pants.backend.python.lint.ruff.subsystem import rules as ruff_subsystem_rul
 from pants.backend.python.target_types import PythonSourcesGeneratorTarget
 from pants.core.goals.fix import FixResult
 from pants.core.goals.fmt import FmtResult
-from pants.core.goals.lint import LintResult
-from pants.core.util_rules import config_files
+from pants.core.goals.lint import Lint, LintResult
+from pants.core.register import rules as core_rules
+from pants.core.target_types import (
+    FilesGeneratorTarget,
+    FileTarget,
+    ResourcesGeneratorTarget,
+    ResourceTarget,
+)
+from pants.core.util_rules import config_files, source_files
 from pants.core.util_rules.partitions import Partitions, _EmptyMetadata
 from pants.core.util_rules.source_files import SourceFiles, SourceFilesRequest
+from pants.engine import process
 from pants.engine.addresses import Address
 from pants.engine.fs import DigestContents
 from pants.engine.target import Target
 from pants.testutil.python_interpreter_selection import all_major_minor_python_versions
-from pants.testutil.rule_runner import QueryRule, RuleRunner
+from pants.testutil.rule_runner import GoalRuleResult, QueryRule, RuleRunner
 
 GOOD_FILE = 'a = "string without any placeholders"\n'
 BAD_FILE = 'a = f"string without any placeholders"\n'
@@ -412,3 +420,94 @@ def test_report_file(rule_runner: RuleRunner) -> None:
     assert len(report_files) == 1
     assert "f.py:1:5" in report_files[0].content.decode()
     assert "F541" in report_files[0].content.decode()
+
+
+@pytest.fixture
+def lint_goal_rule_runner() -> RuleRunner:
+    return RuleRunner(
+        rules=[
+            *core_rules(),
+            *source_files.rules(),
+            *process.rules(),
+            *ruff_check_rules(),
+            *skip_field.rules(),
+            *ruff_check_skip_field.rules(),
+            *ruff_subsystem_rules(),
+            *config_files.rules(),
+            *target_types_rules.rules(),
+        ],
+        target_types=[
+            PythonSourcesGeneratorTarget,
+            FileTarget,
+            FilesGeneratorTarget,
+            ResourceTarget,
+            ResourcesGeneratorTarget,
+        ],
+    )
+
+
+PYTHON_ASSETS_BUILD = (
+    'resources(name="read", sources=["read/*.py", "read/*.txt"])\n'
+    'files(name="raw", sources=["raw/*.py"])\n'
+)
+
+
+def python_assets(
+    *, read: str = GOOD_FILE, raw: str = GOOD_FILE, notes: str = "plain notes\n"
+) -> dict[str, str]:
+    return {
+        "fixtures/BUILD": PYTHON_ASSETS_BUILD,
+        "fixtures/read/sample.py": read,
+        "fixtures/read/notes.txt": notes,
+        "fixtures/raw/__init__.py": raw,
+    }
+
+
+def lint_python_assets(rule_runner: RuleRunner, *args: str) -> GoalRuleResult:
+    rule_runner.set_options(
+        ["--backend-packages=pants.backend.python.lint.ruff"],
+        env_inherit={"PATH", "PYENV_ROOT", "HOME"},
+    )
+    return rule_runner.run_goal_rule(Lint, args=["--only=ruff-check", *args, "fixtures::"])
+
+
+@pytest.mark.parametrize("bad", ["read", "raw"])
+def test_python_assets_are_checked_when_enabled(
+    lint_goal_rule_runner: RuleRunner, bad: str
+) -> None:
+    lint_goal_rule_runner.write_files(python_assets(**{bad: BAD_FILE}))
+    result = lint_python_assets(lint_goal_rule_runner, "--ruff-check-python-assets")
+    assert result.exit_code == 1
+    assert "ruff check failed" in result.stderr
+
+
+def test_python_assets_check_only_python_files(lint_goal_rule_runner: RuleRunner) -> None:
+    # A `.txt` resource beside them is never given to Ruff: as Python it would not parse.
+    lint_goal_rule_runner.write_files(python_assets(notes="this is not Python (\n"))
+    result = lint_python_assets(lint_goal_rule_runner, "--ruff-check-python-assets")
+    assert result.exit_code == 0
+    assert "ruff check succeeded" in result.stderr
+
+
+def test_python_assets_are_not_checked_by_default(lint_goal_rule_runner: RuleRunner) -> None:
+    lint_goal_rule_runner.write_files(python_assets(read=BAD_FILE, raw=BAD_FILE))
+    result = lint_python_assets(lint_goal_rule_runner)
+    assert result.exit_code == 0
+    assert "ruff check" not in result.stderr
+
+
+@pytest.mark.parametrize("skip_field_name", ["skip_ruff_check", "skip_ruff"])
+def test_python_assets_opt_out_with_the_skip_fields(
+    lint_goal_rule_runner: RuleRunner, skip_field_name: str
+) -> None:
+    lint_goal_rule_runner.write_files(
+        {
+            **python_assets(read=BAD_FILE),
+            "fixtures/BUILD": PYTHON_ASSETS_BUILD.replace(
+                '"read/*.txt"]', f'"read/*.txt"], {skip_field_name}=True'
+            ),
+        }
+    )
+    result = lint_python_assets(lint_goal_rule_runner, "--ruff-check-python-assets")
+    assert result.exit_code == 0
+    assert "ruff check succeeded" in result.stderr
