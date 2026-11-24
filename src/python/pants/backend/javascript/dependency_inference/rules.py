@@ -325,8 +325,9 @@ async def infer_stylesheet_dependencies(
     folder = os.path.dirname(source.file_path)
     relative = sorted(link for link in links if link.startswith("."))
     packages = sorted(link for link in links if not link.startswith("."))
+    # Node resolves a stylesheet's links from the file's folder, whichever target owns it
     candidate_pkgs = await map_candidate_node_packages(
-        RequestNodePackagesCandidateMap(request.field_set.address), **implicitly()
+        RequestNodePackagesCandidateMap(Address(folder)), **implicitly()
     )
     owners = await concurrently(
         find_owners(OwnersRequest((os.path.normpath(os.path.join(folder, link)),)), **implicitly())
