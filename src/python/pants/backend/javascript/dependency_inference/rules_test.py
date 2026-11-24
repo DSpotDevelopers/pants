@@ -11,8 +11,10 @@ from pants.backend.javascript import package_json
 from pants.backend.javascript.dependency_inference.rules import (
     InferJSDependenciesRequest,
     InferNodePackageDependenciesRequest,
+    InferStylesheetDependenciesRequest,
     JSSourceInferenceFieldSet,
     NodePackageInferenceFieldSet,
+    StylesheetInferenceFieldSet,
 )
 from pants.backend.javascript.dependency_inference.rules import rules as dependency_inference_rules
 from pants.backend.javascript.package_json import AllPackageJson
@@ -41,6 +43,7 @@ def rule_runner() -> RuleRunner:
             QueryRule(Owners, (OwnersRequest,)),
             QueryRule(InferredDependencies, (InferNodePackageDependenciesRequest,)),
             QueryRule(InferredDependencies, (InferJSDependenciesRequest,)),
+            QueryRule(InferredDependencies, (InferStylesheetDependenciesRequest,)),
         ],
         target_types=[
             *package_json.target_types(),
@@ -764,3 +767,125 @@ def test_infers_first_party_package_json_field_js_source_dependency_with_starred
     ).include
 
     assert set(addresses) == {Address("src/js/b", generated_name="spam")}
+
+
+def get_inferred_stylesheet_dependencies(rule_runner: RuleRunner, address: Address) -> set[Address]:
+    tgt = rule_runner.get_target(address)
+    return set(
+        rule_runner.request(
+            InferredDependencies,
+            [InferStylesheetDependenciesRequest(StylesheetInferenceFieldSet.create(tgt))],
+        ).include
+    )
+
+
+def given_design_package_and_app(rule_runner: RuleRunner, app_css: str) -> None:
+    rule_runner.write_files(
+        {
+            "packages/design/BUILD": "package_json()\nfiles(name='data', sources=['*.css'])",
+            "packages/design/package.json": given_package(
+                "@flowsev/design", "0.0.1", exports={".": "./index.css"}
+            ),
+            "packages/design/index.css": '@import "./tokens.css";\n',
+            "packages/design/tokens.css": ":root { --accent: red; }\n",
+            "apps/costs/BUILD": "package_json()",
+            "apps/costs/package.json": given_package(
+                "costs", "0.0.1", dependencies={"@flowsev/design": "workspace:*"}
+            ),
+            "apps/costs/src/BUILD": "resources(name='styles', sources=['*.css'])",
+            "apps/costs/src/index.css": app_css,
+        }
+    )
+
+
+def test_a_stylesheet_import_of_a_package_infers_the_package(rule_runner: RuleRunner) -> None:
+    given_design_package_and_app(rule_runner, '@import "@flowsev/design" theme(static);\n')
+    assert get_inferred_stylesheet_dependencies(
+        rule_runner, Address("apps/costs/src", target_name="styles", relative_file_path="index.css")
+    ) == {Address("packages/design", generated_name="__flowsev/design")}
+
+
+def test_a_tailwind_source_of_a_package_infers_the_package_and_an_exclusion_does_not(
+    rule_runner: RuleRunner,
+) -> None:
+    given_design_package_and_app(
+        rule_runner, '@source "@flowsev/design";\n@source not "../legacy";\n'
+    )
+    assert get_inferred_stylesheet_dependencies(
+        rule_runner, Address("apps/costs/src", target_name="styles", relative_file_path="index.css")
+    ) == {Address("packages/design", generated_name="__flowsev/design")}
+
+
+def test_a_relative_stylesheet_import_infers_the_owner_of_the_file(rule_runner: RuleRunner) -> None:
+    given_design_package_and_app(rule_runner, "")
+    assert get_inferred_stylesheet_dependencies(
+        rule_runner, Address("packages/design", target_name="data", relative_file_path="index.css")
+    ) == {Address("packages/design", target_name="data", relative_file_path="tokens.css")}
+
+
+def test_a_commented_out_import_and_a_url_infer_nothing(rule_runner: RuleRunner) -> None:
+    given_design_package_and_app(
+        rule_runner,
+        '/* @import "@flowsev/design"; */\n@import url("https://fonts.example/x.css");\n',
+    )
+    assert (
+        get_inferred_stylesheet_dependencies(
+            rule_runner,
+            Address("apps/costs/src", target_name="styles", relative_file_path="index.css"),
+        )
+        == set()
+    )
+
+
+def test_an_unowned_stylesheet_import_is_reported(rule_runner: RuleRunner) -> None:
+    given_design_package_and_app(rule_runner, '@import "@flowsev/missing";\n')
+    rule_runner.set_options(["--nodejs-infer-unowned-dependency-behavior=error"])
+    with engine_error(UnownedDependencyError, contains="@flowsev/missing"):
+        get_inferred_stylesheet_dependencies(
+            rule_runner,
+            Address("apps/costs/src", target_name="styles", relative_file_path="index.css"),
+        )
+
+
+def test_a_file_that_is_not_a_stylesheet_infers_nothing(rule_runner: RuleRunner) -> None:
+    given_design_package_and_app(rule_runner, "")
+    rule_runner.write_files(
+        {
+            "apps/costs/src/BUILD": "resources(name='styles', sources=['*.css', '*.txt'])",
+            "apps/costs/src/notes.txt": '@import "@flowsev/design";\n',
+        }
+    )
+    assert (
+        get_inferred_stylesheet_dependencies(
+            rule_runner,
+            Address("apps/costs/src", target_name="styles", relative_file_path="notes.txt"),
+        )
+        == set()
+    )
+
+
+def test_a_stylesheet_resolves_packages_from_its_own_folder_whoever_owns_it(
+    rule_runner: RuleRunner,
+) -> None:
+    # Node resolves a stylesheet's imports from the file's folder: a target declared above the app's
+    # package (a whole-tree `resources`) still reaches the app's third-party packages.
+    given_design_package_and_app(rule_runner, '@import "tailwindcss";\n')
+    rule_runner.write_files(
+        {
+            "apps/BUILD": "resources(name='tree', sources=['costs/src/*.css'])",
+            "apps/costs/package.json": given_package(
+                "costs", "0.0.1", dependencies={"tailwindcss": "4.0.0"}
+            ),
+        }
+    )
+    assert get_inferred_stylesheet_dependencies(
+        rule_runner, Address("apps", target_name="tree", relative_file_path="costs/src/index.css")
+    ) == {Address("apps/costs", generated_name="tailwindcss")}
+
+
+def test_a_tailwind_source_of_a_package_folder_infers_the_package(rule_runner: RuleRunner) -> None:
+    # Tailwind's `@source` also takes a folder to scan; a folder that is a package is that package
+    given_design_package_and_app(rule_runner, '@source "../../../packages/design";\n')
+    assert get_inferred_stylesheet_dependencies(
+        rule_runner, Address("apps/costs/src", target_name="styles", relative_file_path="index.css")
+    ) == {Address("packages/design", generated_name="__flowsev/design")}
