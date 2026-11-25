@@ -36,6 +36,7 @@ from pants.core.util_rules.adhoc_process_support import (
     create_tool_runner,
     prepare_env_vars,
 )
+from pants.core.util_rules.adhoc_process_support import rules as adhoc_process_support_rules
 from pants.core.util_rules.distdir import DistDir
 from pants.core.util_rules.env_vars import environment_vars_subset
 from pants.core.util_rules.partitions import (
@@ -1445,4 +1446,6 @@ async def build_runtime_package_dependencies(
 def rules():
     return [
         *collect_rules(),
+        # the preflight's runnable is run through the ad hoc tool runner, whose rules every backend can then rely on
+        *adhoc_process_support_rules(),
     ]
