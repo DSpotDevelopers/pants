@@ -164,7 +164,9 @@ jobs:
 
   tests:
     needs: [source, build]
-    runs-on: [self-hosted, linux, x64, slot-medium]
+    # The build's runner class: the focused suites run up to 6 minutes each (a JavaScript integration suite 202 s of
+    # its 240 s limit), and a 1-vCPU medium slot shared with other jobs ran past them (run 45668070356).
+    runs-on: [self-hosted, linux, x64, dspot]
     timeout-minutes: 30
     env:
       PY: python3.14
@@ -176,8 +178,25 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           ref: ${{ needs.source.outputs.head }}
-          fetch-depth: 0
+          fetch-depth: 1
           persist-credentials: false
+      # `--changed-since` diffs BASE...HEAD, so the job needs the two tips and their merge base, and nothing else: a full
+      # history fetch (every branch and tag of the fork) took 14 of this job's 30 minutes (run 45668070356, attempt 1).
+      # Both tips deepen together until they share their merge base.
+      - name: The base commit and the merge base with the head, nothing else
+        env:
+          BASE: ${{ needs.source.outputs.base }}
+        run: |
+          set -euo pipefail
+          head="$(git rev-parse HEAD)"
+          fetch() { git -c protocol.version=2 fetch --no-tags --quiet "$@" origin "$BASE" "$head"; }
+          fetch --depth=50
+          for _ in $(seq 40); do
+            if git merge-base "$BASE" "$head" > /dev/null; then exit 0; fi
+            fetch --deepen=200
+          done
+          fetch --unshallow
+          git merge-base "$BASE" "$head" > /dev/null
       # The interpreters the focused suites run under, as upstream's own test jobs install them
       # (pants_release/generate_github_workflows.py, install_pythons): the runner image carries none
       # of them. 3.14 is listed last, so it stays the job's default python.
