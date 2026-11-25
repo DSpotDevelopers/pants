@@ -18,6 +18,7 @@ from pants.backend.python.goals import package_pex_binary
 from pants.backend.python.target_types import PexBinary, PythonSourcesGeneratorTarget
 from pants.backend.python.target_types_rules import rules as python_target_type_rules
 from pants.backend.python.util_rules import pex_from_targets
+from pants.core import register as core_register
 from pants.core.environments.rules import ChosenLocalEnvironmentName
 from pants.core.goals.test import (
     BuildPackageDependenciesRequest,
@@ -70,7 +71,7 @@ from pants.option.option_types import SkipOption
 from pants.option.subsystem import Subsystem
 from pants.testutil.option_util import create_goal_subsystem, create_subsystem
 from pants.testutil.python_rule_runner import PythonRuleRunner
-from pants.testutil.rule_runner import QueryRule, mock_console, run_rule_with_mocks
+from pants.testutil.rule_runner import QueryRule, RuleRunner, mock_console, run_rule_with_mocks
 from pants.util.logging import LogLevel
 
 
@@ -832,3 +833,9 @@ def test_non_utf8_output() -> None:
         output_setting=ShowOutput.ALL,
     )
     assert test_result.message() == "failed (exit code 1).\n��\n��\n\n"
+
+
+def test_the_core_test_goal_needs_no_backend_for_its_preflight() -> None:
+    # the preflight runs its runnable through the ad hoc tool runner: the core rules alone (the bootstrap scheduler
+    # loads no other backend) must still form a valid rule graph
+    RuleRunner(rules=[*core_register.rules()], target_types=core_register.target_types())
