@@ -31,6 +31,7 @@ from pants.core.goals.test import (
     Test,
     TestDebugRequest,
     TestFieldSet,
+    TestPreflightResult,
     TestRequest,
     TestResult,
     TestSubsystem,
@@ -348,6 +349,9 @@ def run_test_rule(
                 "pants.core.goals.test.test_batch_to_debug_request": mock_debug_request,
                 "pants.core.goals.test.test_batch_to_debug_adapter_request": mock_debug_request,
                 "pants.core.goals.test.run_test_batch": mock_test_partition,
+                # no [test].preflight in these runs: every batch is admitted
+                "pants.core.goals.test.run_test_preflight": lambda _request,
+                _subsystem: TestPreflightResult(None),
                 "pants.core.goals.test.create_coverage_report": mock_coverage_report_generation,
                 "pants.engine.internals.specs_rules.find_valid_field_sets_for_target_roots": mock_find_valid_field_sets,
                 "pants.engine.intrinsics.merge_digests": lambda _: EMPTY_DIGEST,
