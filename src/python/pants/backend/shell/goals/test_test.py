@@ -19,7 +19,8 @@ from pants.backend.shell.target_types import (
 )
 from pants.build_graph.address import Address
 from pants.core.goals import package
-from pants.core.goals.test import TestDebugRequest, TestResult, get_filtered_environment
+from pants.core.goals import test as core_test
+from pants.core.goals.test import Test, TestDebugRequest, TestResult, get_filtered_environment
 from pants.core.util_rules import archive, source_files, system_binaries
 from pants.engine.fs import EMPTY_DIGEST, Digest, DigestContents, FileContent
 from pants.engine.internals.scheduler import ExecutionError
@@ -350,3 +351,87 @@ def test_cache_scope_support(rule_runner: RuleRunner) -> None:
     # In a new session, the success-scoped test should NOT be re-executed.
     success_result_2 = run_test(address_success)
     assert test_output_equal(success_result_1, success_result_2)
+
+
+@pytest.fixture
+def goal_rule_runner() -> RuleRunner:
+    return RuleRunner(
+        rules=[
+            *core_test.rules(),
+            *test.rules(),
+            *source_files.rules(),
+            *archive.rules(),
+            *package.rules(),
+            *system_binaries.rules(),
+            *run_system_binary.rules(),
+            get_filtered_environment,
+        ],
+        target_types=[
+            ShellSourcesGeneratorTarget,
+            ShellCommandTarget,
+            ShellCommandTestTarget,
+            SystemBinaryTarget,
+        ],
+    )
+
+
+# The test process itself exits 7, so a run's exit code says which process decided it: 3 is the preflight's refusal
+# (the test process never started), 7 is the test process.
+PREFLIGHT_PROBE_BUILD = dedent(
+    """\
+    shell_sources(name="src")
+    system_binary(name="sh", binary_name="sh")
+    test_shell_command(
+      name="probe",
+      execution_dependencies=[":src"],
+      command="exit 7",
+    )
+    """
+)
+# A checker that refuses any declared input naming a live data path: it gets the selected targets' declared source
+# closure as its arguments, in its own sandbox (shell built-ins only: a Pants process inherits no PATH).
+PREFLIGHT_CHECK = 'for f; do while IFS= read -r line; do case "$line" in *"/srv/live"*) exit 3;; esac; done < "$f"; done'
+PREFLIGHT_ARGS = [
+    "--test-preflight=//:sh",
+    f"--test-preflight-args=['-c', '{PREFLIGHT_CHECK}', 'preflight']",
+    "--test-force",
+    "//:probe",
+]
+
+
+@pytest.mark.platform_specific_behavior
+def test_preflight_refuses_a_shell_test_before_its_process_starts(
+    goal_rule_runner: RuleRunner,
+) -> None:
+    goal_rule_runner.write_files(
+        {"BUILD": PREFLIGHT_PROBE_BUILD, "probe.sh": "export DATA_DIR=/srv/live/data\n"}
+    )
+    refused = goal_rule_runner.run_goal_rule(Test, args=PREFLIGHT_ARGS, env_inherit={"PATH"})
+    assert refused.exit_code == 3, "the preflight refuses: the test process never starts"
+
+    goal_rule_runner.write_files({"probe.sh": 'export DATA_DIR="$TMPDIR/data"\n'})
+    admitted = goal_rule_runner.run_goal_rule(Test, args=PREFLIGHT_ARGS, env_inherit={"PATH"})
+    assert admitted.exit_code == 7, "the preflight admits: the test process runs"
+
+
+@pytest.mark.platform_specific_behavior
+def test_without_a_preflight_the_test_runs_as_before(goal_rule_runner: RuleRunner) -> None:
+    goal_rule_runner.write_files(
+        {"BUILD": PREFLIGHT_PROBE_BUILD, "probe.sh": "export DATA_DIR=/srv/live/data\n"}
+    )
+    result = goal_rule_runner.run_goal_rule(
+        Test, args=["--test-force", "//:probe"], env_inherit={"PATH"}
+    )
+    assert result.exit_code == 7
+
+
+@pytest.mark.platform_specific_behavior
+def test_preflight_refuses_before_an_interactive_debug_run(goal_rule_runner: RuleRunner) -> None:
+    goal_rule_runner.write_files(
+        {"BUILD": PREFLIGHT_PROBE_BUILD, "probe.sh": "export DATA_DIR=/srv/live/data\n"}
+    )
+    with mock_console(goal_rule_runner.options_bootstrapper):
+        refused = goal_rule_runner.run_goal_rule(
+            Test, args=["--test-debug", *PREFLIGHT_ARGS], env_inherit={"PATH"}
+        )
+    assert refused.exit_code == 3, "an interactive run never starts once the preflight refuses"
