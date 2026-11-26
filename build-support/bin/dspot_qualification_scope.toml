@@ -20,7 +20,4 @@ backend_packages = [
 
 # The environment target types the company declares: Pants' implicit local environment, and the
 # workspace environment named in pants.toml [environments-preview.names].
-environment_targets = [
-  "local_environment",
-  "experimental_workspace_environment",
-]
+environment_targets = ["local_environment", "experimental_workspace_environment"]
