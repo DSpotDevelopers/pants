@@ -4,5 +4,9 @@
 # Who may start DSpot's Pants build, and how it builds the release: the files they read at run time.
 python_tests(
     name="tests",
-    dependencies=["//.github/workflows:workflows", "//build-support/bin:dspot_release_build"],
+    dependencies=[
+        "//.github/workflows:workflows",
+        "//build-support/bin:dspot_release_build",
+        "//build-support:venv_bootstrap",
+    ],
 )
