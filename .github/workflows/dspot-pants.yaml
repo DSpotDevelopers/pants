@@ -192,7 +192,6 @@ jobs:
     timeout-minutes: 30
     env:
       PANTS_PANTSD: 'false'
-      PANTS_PROCESS_EXECUTION_LOCAL_PARALLELISM: '1'
       HONEYCOMB_API_KEY: --DISABLED--
       PANTS_OPENTELEMETRY_ENABLED: 'False'
     steps:
