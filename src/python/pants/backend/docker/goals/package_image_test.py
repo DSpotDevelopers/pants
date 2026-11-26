@@ -70,6 +70,7 @@ from pants.engine.fs import (
     CreateDigest,
     Digest,
     DigestContents,
+    DigestEntries,
     DigestSubset,
     FileContent,
     Snapshot,
@@ -103,6 +104,7 @@ def rule_runner() -> RuleRunner:
             QueryRule(DockerOptions, []),
             QueryRule(DockerBuildArgs, [DockerBuildArgsRequest]),
             QueryRule(DockerBuildEnvironment, [DockerBuildEnvironmentRequest]),
+            QueryRule(DigestEntries, [Digest]),
         ],
         target_types=[DockerImageTarget],
     )
@@ -1097,6 +1099,12 @@ def test_build_docker_image_packages_local_output_digest(rule_runner: RuleRunner
         mock_calls={
             "pants.backend.docker.goals.package_image.get_docker_image_build_process": mock_get_build_process,
             "pants.engine.intrinsics.execute_process": mock_execute_process,
+            "pants.engine.intrinsics.get_digest_entries": lambda digest: rule_runner.request(
+                DigestEntries, [digest]
+            ),
+            "pants.engine.intrinsics.create_digest": lambda request: rule_runner.request(
+                Digest, [request]
+            ),
             "pants.engine.intrinsics.digest_subset_to_digest": mock_digest_subset_to_digest,
             "pants.engine.intrinsics.add_prefix": mock_add_prefix,
             "pants.engine.intrinsics.digest_to_snapshot": mock_digest_to_snapshot,
@@ -1220,6 +1228,12 @@ def test_docker_output_capture_checks_outputs_match_mode(
     mock_calls: dict[str, Callable[..., Any]] | None = {
         "pants.backend.docker.goals.package_image.get_docker_image_build_process": mock_get_build_process,
         "pants.engine.intrinsics.execute_process": mock_execute_process,
+        "pants.engine.intrinsics.get_digest_entries": lambda digest: rule_runner.request(
+            DigestEntries, [digest]
+        ),
+        "pants.engine.intrinsics.create_digest": lambda request: rule_runner.request(
+            Digest, [request]
+        ),
         "pants.engine.intrinsics.digest_subset_to_digest": lambda _: EMPTY_DIGEST,
         "pants.engine.intrinsics.add_prefix": mock_add_prefix,
         "pants.engine.intrinsics.digest_to_snapshot": mock_digest_to_snapshot,
