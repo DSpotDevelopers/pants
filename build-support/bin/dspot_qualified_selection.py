@@ -3,10 +3,12 @@
 
 """Prints the targets qualification runs: the change's selection, within the qualified scope.
 
-The scope (dspot_qualification_scope.toml) names the backends the company enables. A target under
-src/python/pants/backend/ is in scope when its directory holds code those backends load, with the
-backends Pants always loads; Pants itself computes that closure (`dependencies --transitive`). Every
-target outside src/python/pants/backend/ is in scope.
+The scope is the parts of Pants the company uses (dspot_qualification_scope.toml names its backends): the folders holding
+code that Pants loads when it runs with those backends, from its entry point and the backends' register modules, plus
+those Pants always loads. Pants itself computes that closure (`dependencies --transitive`). A target under
+src/python/pants/ is in scope when its folder is in the closure, so a feature none of them loads (Docker environments'
+backend, remote execution's Buildbarn tests, the JVM) falls outside by itself. Every target outside src/python/pants/
+(the fork's own CI, build-support) is in scope.
 """
 
 from __future__ import annotations
@@ -18,7 +20,9 @@ from collections.abc import Callable, Iterable
 from pathlib import Path
 
 SCOPE = Path(__file__).with_name("dspot_qualification_scope.toml")
-BACKENDS = "src/python/pants/backend/"
+PANTS = "src/python/pants/"
+# Pants' entry point: what every run loads before any backend
+ENTRY = "src/python/pants/bin/pants_loader.py"
 # The backends every Pants run loads (pants/init/extension_loader.py, load_build_configuration_from_source).
 ALWAYS_LOADED = ("pants.core", "pants.backend.project_info")
 
@@ -40,13 +44,13 @@ def directory(address: str) -> str:
 
 
 def scope_directories(pants: Pants, backends: Iterable[str]) -> set[str]:
-    roots = [register_module(b) for b in (*ALWAYS_LOADED, *backends)]
+    roots = [ENTRY, *(register_module(b) for b in (*ALWAYS_LOADED, *backends))]
     loaded = [*roots, *pants("dependencies", "--transitive", *roots)]
-    return {directory(a) for a in loaded if a.startswith(BACKENDS)}
+    return {directory(a) for a in loaded if a.startswith(PANTS)}
 
 
 def in_scope(address: str, directories: set[str]) -> bool:
-    return not address.startswith(BACKENDS) or directory(address) in directories
+    return not address.startswith(PANTS) or directory(address) in directories
 
 
 def selection(pants: Pants, base: str) -> tuple[list[str], list[str]]:

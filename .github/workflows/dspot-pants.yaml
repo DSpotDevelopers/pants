@@ -217,15 +217,10 @@ jobs:
           done
           fetch --unshallow
           git merge-base "$BASE" "$head" > /dev/null
-      # The tools and interpreters the qualified suites run under, as upstream's own test jobs install
-      # them (pants_release/generate_github_workflows.py, test_jobs): the runner image carries none of
-      # them, and a suite whose tool is missing skips, which this fork counts as a failure. Go and
-      # thrift serve only backends outside the qualified scope. The JDK serves pants/jvm and pants/bsp.
-      - name: Install AdoptJDK
-        uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
-        with:
-          distribution: adopt
-          java-version: '11'
+      # The interpreters the qualified suites run under, as upstream's own test jobs install them
+      # (pants_release/generate_github_workflows.py, test_jobs): the runner image carries none of them,
+      # and a suite whose interpreter is missing skips, which this fork counts as a failure. Upstream's
+      # JDK, Go and thrift serve only folders outside the qualified scope (the JVM, Go, codegen).
       # Upstream's Linux list without 3.7, which setup-python doesn't publish for the runners' Ubuntu
       # 24.04, and 3.14, the standalone interpreter installed immediately afterwards for Pants itself.
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
@@ -253,8 +248,9 @@ jobs:
           cpus="$("$PY" build-support/bin/dspot_slot_cpus.py)"
           echo "PANTS_PROCESS_EXECUTION_LOCAL_PARALLELISM=${cpus}" >> "$GITHUB_ENV"
           echo "Pants' process parallelism: ${cpus}"
-      # The patch and its direct dependents, within the qualified scope: the backends the company
-      # enables (build-support/bin/dspot_qualification_scope.toml).
+      # The patch and its direct dependents, within the qualified scope: the folders Pants loads when it
+      # runs with the backends the company enables (build-support/bin/dspot_qualification_scope.toml).
+      # The Docker environments' backend, remote execution's Buildbarn tests and the JVM fall outside it.
       - name: Run only the patch and its direct dependent suites, within the qualified scope
         env:
           BASE: ${{ needs.source.outputs.base }}
