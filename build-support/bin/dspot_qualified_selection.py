@@ -4,7 +4,7 @@
 """Prints the targets qualification runs: the change's selection, within the qualified scope.
 
 The scope is the parts of Pants the company uses (dspot_qualification_scope.toml names its backends): the folders holding
-code that Pants loads when it runs with those backends, from its entry point and the backends' register modules, plus
+code that Pants loads when it runs with those backends, from its entry code and the backends' register modules, plus
 those Pants always loads. Pants itself computes that closure (`dependencies --transitive`). A target under
 src/python/pants/ is in scope when its folder is in the closure, so a feature none of them loads (Docker environments'
 backend, remote execution's Buildbarn tests, the JVM) falls outside by itself. Every target outside src/python/pants/
@@ -21,8 +21,9 @@ from pathlib import Path
 
 SCOPE = Path(__file__).with_name("dspot_qualification_scope.toml")
 PANTS = "src/python/pants/"
-# Pants' entry point: what every run loads before any backend
-ENTRY = "src/python/pants/bin/pants_loader.py"
+# Pants' entry code, what every run loads before any backend: bin's sources without pants_loader.py, whose target
+# depends on `:plugins`, every backend the release PEX ships
+ENTRY = "src/python/pants/bin:bin"
 # The backends every Pants run loads (pants/init/extension_loader.py, load_build_configuration_from_source).
 ALWAYS_LOADED = ("pants.core", "pants.backend.project_info")
 
