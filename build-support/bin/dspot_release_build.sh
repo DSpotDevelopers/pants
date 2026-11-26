@@ -58,6 +58,9 @@ exec "${zigbuild}" zig ${tool} -- -g -fno-sanitize=all -target x86_64-linux-gnu.
 EOF
   chmod +x "${wrappers}/${tool}"
 done
+# Python's wheel backend uses these; Rust's native builds use the target-specific settings.
+export CC="${wrappers}/cc"
+export LDSHARED="${wrappers}/cc -shared"
 export CC_x86_64_unknown_linux_gnu="${wrappers}/cc"
 export CXX_x86_64_unknown_linux_gnu="${wrappers}/c++"
 export CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER="${wrappers}/cc"
