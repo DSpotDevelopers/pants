@@ -25,8 +25,10 @@ def test_the_wheel_receives_the_existing_floor_compiler() -> None:
     assert 'export CC="${wrappers}/cc"' in script
     assert 'export LDSHARED="${wrappers}/cc -shared"' in script
     wheel = next(
-        node for node in ast.walk(ast.parse(Path("src/python/pants/BUILD").read_text()))
-        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+        node
+        for node in ast.walk(ast.parse(Path("src/python/pants/BUILD").read_text()))
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
         and node.func.id == "python_distribution"
     )
     env_vars = ast.literal_eval(next(k.value for k in wheel.keywords if k.arg == "env_vars"))
