@@ -90,8 +90,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runner-class: [heavy-ok, slot-medium]
-    runs-on: [self-hosted, linux, x64, dspot, '${{ matrix.runner-class }}']
+        include:
+          - runner-class: heavy-ok
+            runner-labels: [self-hosted, linux, x64, dspot, heavy-ok]
+          - runner-class: slot-medium
+            runner-labels: [self-hosted, linux, x64, slot-medium]
+    runs-on: ${{ matrix.runner-labels }}
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
