@@ -1,8 +1,8 @@
 # Copyright 2026 Pants project contributors (see CONTRIBUTORS.md).
 # Licensed under the Apache License, Version 2.0 (see LICENSE).
 
-"""The tests job installs the tools upstream's own test jobs install, so a selected backend suite
-runs instead of skipping for a missing compiler or interpreter."""
+"""The tests job runs the change's selection within the qualified scope, with the tools upstream's
+own test jobs install for it, so a qualified suite runs instead of skipping for a missing tool."""
 
 from __future__ import annotations
 
@@ -12,8 +12,6 @@ import yaml
 from pants_release.generate_github_workflows import (
     PYTHON_VERSIONS_PER_PLATFORM,
     Platform,
-    download_apache_thrift,
-    install_go,
     install_jdk,
 )
 
@@ -23,10 +21,15 @@ def steps_of_the_tests_job() -> list[dict]:
     return workflow["jobs"]["tests"]["steps"]
 
 
-def test_tests_job_installs_upstreams_jdk_go_and_thrift() -> None:
-    steps = steps_of_the_tests_job()
-    for step in (install_jdk(), *install_go(), download_apache_thrift()):
-        assert step in steps, step["name"]
+def test_tests_job_installs_upstreams_jdk() -> None:
+    assert install_jdk() in steps_of_the_tests_job()
+
+
+def test_tests_job_runs_only_the_qualified_selection() -> None:
+    (run,) = [s["run"] for s in steps_of_the_tests_job() if "./pants" in s.get("run", "")]
+    select = 'dspot_qualified_selection.py "$BASE" > "$RUNNER_TEMP/qualified.txt"'
+    assert select in run
+    assert './pants --spec-files="$RUNNER_TEMP/qualified.txt" lint test' in run
 
 
 def test_tests_job_installs_upstreams_test_interpreters() -> None:

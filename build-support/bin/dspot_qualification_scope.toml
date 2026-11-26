@@ -1,0 +1,26 @@
+# What DSpot's own Pants build is qualified for: the Pants features dspot-company-data uses, as its
+# pants.toml enables them (company main b311266e33, 2026-11-26). Qualification runs the change's
+# selection within these backends, and every suite outside src/python/pants/backend/; a backend
+# not listed here is a feature the company doesn't use, and its suites run nowhere for us.
+#
+# The owner, 3 Nov 2026 ~20:10Z: "disable 100% all tests (all, no exception) that aren't related to
+# [what we use] ... what's done stays as it is".
+
+# pants.toml [GLOBAL] backend_packages.
+backend_packages = [
+  "pants.backend.python",
+  "pants.backend.shell",
+  "pants.backend.experimental.javascript",
+  "pants.backend.experimental.typescript",
+  "pants.backend.experimental.visibility",
+  "pants.backend.experimental.python.lint.ruff.check",
+  "pants.backend.experimental.tools.semgrep",
+  "pants.backend.python.providers.experimental.python_build_standalone",
+]
+
+# The environment target types the company declares: Pants' implicit local environment, and the
+# workspace environment named in pants.toml [environments-preview.names].
+environment_targets = [
+  "local_environment",
+  "experimental_workspace_environment",
+]
