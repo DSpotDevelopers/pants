@@ -183,7 +183,8 @@ jobs:
     needs: [source, build]
     # The build's runner class: the focused suites run up to 6 minutes each (a JavaScript integration suite 202 s of
     # its 240 s limit), and a 1-vCPU medium slot shared with other jobs ran past them (runs 45668070356, 45711444202).
-    runs-on: [self-hosted, linux, x64, dspot, heavy-ok]
+    # Selected Docker backend suites need the guarded socket. heavy-ok alone does not provide it.
+    runs-on: [self-hosted, linux, x64, dspot, heavy-ok, docker-socket]
     timeout-minutes: 30
     env:
       PANTS_PANTSD: 'false'

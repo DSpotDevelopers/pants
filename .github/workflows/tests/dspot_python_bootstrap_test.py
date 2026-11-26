@@ -59,3 +59,8 @@ def test_bootstrap_proof_covers_both_runner_classes() -> None:
         "slot-medium",
     ]
     assert "python-bootstrap" in jobs["build"]["needs"]
+
+
+def test_selected_backend_suites_require_the_guarded_docker_socket() -> None:
+    jobs = yaml.safe_load(Path(".github/workflows/dspot-pants.yaml").read_text())["jobs"]
+    assert "docker-socket" in jobs["tests"]["runs-on"]

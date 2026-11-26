@@ -4,3 +4,4 @@ self-hosted-runner:
     - slot-cpus-1
     - slot-medium
     - heavy-ok
+    - docker-socket
