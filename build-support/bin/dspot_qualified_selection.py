@@ -21,9 +21,10 @@ from pathlib import Path
 
 SCOPE = Path(__file__).with_name("dspot_qualification_scope.toml")
 PANTS = "src/python/pants/"
-# Pants' entry code, what every run loads before any backend: bin's sources without pants_loader.py, whose target
-# depends on `:plugins`, every backend the release PEX ships
-ENTRY = "src/python/pants/bin:bin"
+# Pants' entry code, what every run loads before any backend: the module pants_loader.py runs. Never a target of bin's
+# folder: pants_loader's depends on `:plugins`, every backend the release PEX ships, and bin's other target holds the
+# folder's tests, whose integration helpers reach pants_loader again through pants/__main__.py
+ENTRY = "src/python/pants/bin/pants_runner.py"
 # The backends every Pants run loads (pants/init/extension_loader.py, load_build_configuration_from_source).
 ALWAYS_LOADED = ("pants.core", "pants.backend.project_info")
 
