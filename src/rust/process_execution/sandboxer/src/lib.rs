@@ -383,6 +383,11 @@ impl SandboxerClient {
     }
 }
 
+// How many Sandboxers this process has created: each one's socket is named by its process and this number, because one
+// process can hold two at once (pantsd builds a new scheduler, and so a new Sandboxer, when its options change, while
+// the old one's server still runs).
+static SANDBOXERS_CREATED: AtomicUsize = AtomicUsize::new(0);
+
 // The spawned sandboxer process and a connection to it.
 pub struct SandboxerProcess {
     process: ManagedChild,
@@ -414,15 +419,17 @@ impl Sandboxer {
                 .prefix_hash()
         );
 
+        let instance = SANDBOXERS_CREATED.fetch_add(1, Ordering::Relaxed);
         let try_socket_path = |base: PathBuf| -> Option<PathBuf> {
             let run_dir = if base.starts_with(&pants_workdir) {
                 base
             } else {
                 base.join(&workdir_hash)
             };
-            // Each Pants process gets its own sandboxer, so that concurrent Pants processes
-            // don't preempt each other's sandboxer.
-            let socket_path = run_dir.join(format!("sandboxer-{}.sock", std::process::id()));
+            // Each Sandboxer gets its own socket, so that neither concurrent Pants processes nor two
+            // Sandboxers of one process (pantsd's old and new scheduler) preempt each other's sandboxer.
+            let socket_path =
+                run_dir.join(format!("sandboxer-{}-{instance}.sock", std::process::id()));
             debug!("Trying sandboxer socket path {}", socket_path.display());
 
             match SocketAddr::from_pathname(&socket_path) {
