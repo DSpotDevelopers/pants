@@ -31,7 +31,9 @@ _PY_VERSION = ".".join(map(str, sys.version_info[:3]))
 _PY_TAG = "".join(map(str, sys.version_info[:2])) + sys.abiflags
 _PY_OS = platform.system()  # Linux
 _PY_ARCH_TAG = platform.machine()  # x86_64
-_ELF_BITS_MARKER = "(64bit)" if platform.architecture() == ("64bit", "ELF") else ""
+# These wheels match this interpreter's platform and word size. platform.architecture()
+# shells out to an ambient `file` program, which need not exist in a test sandbox.
+_ELF_BITS_MARKER = "(64bit)" if _PY_OS == "Linux" and sys.maxsize > 2**32 else ""
 
 
 @pytest.fixture
