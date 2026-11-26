@@ -54,10 +54,26 @@ def test_both_jobs_use_the_same_self_contained_python() -> None:
 
 def test_bootstrap_proof_covers_both_runner_classes() -> None:
     jobs = yaml.safe_load(Path(".github/workflows/dspot-pants.yaml").read_text())["jobs"]
-    assert jobs["python-bootstrap"]["strategy"]["matrix"]["runner-class"] == [
-        "heavy-ok",
-        "slot-medium",
-    ]
+    job = jobs["python-bootstrap"]
+    matrix = job["strategy"]["matrix"]
+    rows = matrix.get("include") or [{"runner-class": name} for name in matrix["runner-class"]]
+    # The company medium lane requests these four labels. Only heavy runners carry "dspot".
+    fleet_labels = {
+        "heavy-ok": {"self-hosted", "linux", "x64", "dspot", "heavy-ok"},
+        "slot-medium": {"self-hosted", "linux", "x64", "slot-medium"},
+    }
+    assert {row["runner-class"] for row in rows} == set(fleet_labels)
+    for row in rows:
+        configured = job["runs-on"]
+        labels = (
+            row["runner-labels"]
+            if configured == "${{ matrix.runner-labels }}"
+            else [
+                label.replace("${{ matrix.runner-class }}", row["runner-class"])
+                for label in configured
+            ]
+        )
+        assert set(labels) == fleet_labels[row["runner-class"]], row["runner-class"]
     assert "python-bootstrap" in jobs["build"]["needs"]
 
 
