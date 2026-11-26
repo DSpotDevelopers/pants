@@ -5,10 +5,11 @@ use ::fs::DirectoryDigest;
 use std::fs;
 use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
+use std::path::PathBuf;
 use tempfile::TempDir;
 
 use crate::test_util::prep_store;
-use crate::{SandboxerClient, SandboxerService, ensure_socket_file_removed};
+use crate::{Sandboxer, SandboxerClient, SandboxerService, ensure_socket_file_removed};
 
 #[test]
 fn test_ensure_socket_file_removed() {
@@ -69,4 +70,25 @@ async fn test_sandboxer_service() {
     let materialized_content =
         fs::read_to_string(sandbox_path.join("subdir").join("greeting.txt")).unwrap();
     assert_eq!("Hello, world!", materialized_content);
+}
+
+#[tokio::test]
+async fn test_each_sandboxer_of_one_process_has_its_own_socket() {
+    // pantsd builds a new scheduler, and so a new Sandboxer, when its options change, in the same process: the old
+    // Sandboxer's server runs until it is dropped, so the two must never share a socket path, or the new one's client
+    // reaches the old server and loses it mid-request ("transport error").
+    let dir = TempDir::new().unwrap();
+    let (store_cli_opt, _dir_digest) = prep_store(dir.path()).await;
+    let workdir = dir.path().join("workdir");
+    let first = Sandboxer::new(
+        PathBuf::from("sandboxer"),
+        workdir.clone(),
+        store_cli_opt.clone(),
+    )
+    .await
+    .unwrap();
+    let second = Sandboxer::new(PathBuf::from("sandboxer"), workdir, store_cli_opt)
+        .await
+        .unwrap();
+    assert_ne!(first.socket_path(), second.socket_path());
 }
