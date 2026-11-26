@@ -245,6 +245,14 @@ jobs:
           path: src/python/pants
       - name: Restore executable permissions
         run: chmod +x src/python/pants/bin/native_client src/python/pants/bin/sandboxer src/python/pants/bin/pants_lock
+      # Pants runs one process per CPU it sees, and a runner's container sees the host's CPUs, not the
+      # slot's quota: 32 test processes on a 4-vCPU slot ran past Pants' per-test limit.
+      - name: Pants' processes, one per CPU the slot is granted
+        run: |
+          set -euo pipefail
+          cpus="$("$PY" build-support/bin/dspot_slot_cpus.py)"
+          echo "PANTS_PROCESS_EXECUTION_LOCAL_PARALLELISM=${cpus}" >> "$GITHUB_ENV"
+          echo "Pants' process parallelism: ${cpus}"
       # The patch and its direct dependents, within the qualified scope: the backends the company
       # enables (build-support/bin/dspot_qualification_scope.toml).
       - name: Run only the patch and its direct dependent suites, within the qualified scope
