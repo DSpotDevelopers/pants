@@ -9,7 +9,10 @@ python_sources(
     overrides={
         "external_tool_upgrade.py": {
             "resolve": "external-tool-upgrade",
-        }
+        },
+        "dspot_qualified_selection.py": {
+            "dependencies": [":dspot_qualification_scope"],
+        },
     },
 )
 
@@ -43,3 +46,6 @@ pex_binary(
 
 # The release build script as a file: only file sources reach a Python test's sandbox.
 files(name="dspot_release_build", sources=["dspot_release_build.sh"])
+
+# What qualification covers: the selection script reads it beside itself.
+files(name="dspot_qualification_scope", sources=["dspot_qualification_scope.toml"])
