@@ -43,8 +43,12 @@ def test_tests_job_installs_upstreams_test_interpreters() -> None:
     assert set(PYTHON_VERSIONS_PER_PLATFORM[Platform.LINUX_X86_64]) - {"3.7", "3.14"} <= installed
 
 
-def test_tests_job_keeps_pants_stock_parallelism() -> None:
-    # Upstream's test jobs leave Pants' process parallelism at its default; a pin of 1 runs the
-    # qualified suites one at a time.
+def test_tests_job_runs_pants_at_the_slots_cpus() -> None:
+    # Pants runs one process per CPU it sees, and a runner's container sees the host's CPUs: the job
+    # sets it from the slot's granted CPUs before Pants runs, never a fixed number in its env.
     workflow = yaml.safe_load(Path(".github/workflows/dspot-pants.yaml").read_text())
     assert "PANTS_PROCESS_EXECUTION_LOCAL_PARALLELISM" not in workflow["jobs"]["tests"]["env"]
+    runs = [s.get("run", "") for s in workflow["jobs"]["tests"]["steps"]]
+    budget = next(i for i, r in enumerate(runs) if "build-support/bin/dspot_slot_cpus.py" in r)
+    assert "PANTS_PROCESS_EXECUTION_LOCAL_PARALLELISM=" in runs[budget]
+    assert budget < next(i for i, r in enumerate(runs) if "./pants" in r)
