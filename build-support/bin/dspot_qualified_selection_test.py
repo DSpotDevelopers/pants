@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from dspot_qualified_selection import ALWAYS_LOADED, register_module, scope, selection
+from dspot_qualified_selection import ALWAYS_LOADED, ENTRY, register_module, scope, selection
 
 # Environment kinds whose suites the guarded runners run: no job there owns a Docker host path, and
 # none reaches a remote execution service.
@@ -20,12 +20,13 @@ def fake_pants(loaded: list[str], changed: list[str]):
     return pants, calls
 
 
-def test_the_selection_keeps_core_and_the_loaded_backends_only() -> None:
+def test_the_selection_keeps_the_folders_pants_loads_with_our_backends() -> None:
     pants, calls = fake_pants(
         loaded=[
             "src/python/pants/backend/python/util_rules/pex.py",
             "src/python/pants/backend/adhoc:adhoc",
             "src/python/pants/engine/rules.py",
+            "src/python/pants/version.py",
         ],
         changed=[
             "src/python/pants/engine/rules_test.py:tests",
@@ -35,6 +36,10 @@ def test_the_selection_keeps_core_and_the_loaded_backends_only() -> None:
             "src/python/pants/backend/go/goals/test_test.py",
             "src/python/pants/backend/python:python",
             "src/python/pants:wheel-definition",
+            "src/python/pants/jvm/jdk_rules_test.py:tests",
+            "src/python/pants/engine/internals/buildbarn_integration_tests/buildbarn_remote_cache_integration_test.py:tests",
+            ".github/workflows/tests/dspot_pants_trust_test.py",
+            "build-support/bin/dspot_slot_cpus_test.py",
         ],
     )
     assert selection(pants, "base") == (
@@ -44,13 +49,17 @@ def test_the_selection_keeps_core_and_the_loaded_backends_only() -> None:
             "src/python/pants/backend/adhoc/run_system_binary_test.py",
             "src/python/pants/backend/python:python",
             "src/python/pants:wheel-definition",
+            ".github/workflows/tests/dspot_pants_trust_test.py",
+            "build-support/bin/dspot_slot_cpus_test.py",
         ],
         [
             "src/python/pants/backend/docker/util_rules/docker_build_context_test.py",
             "src/python/pants/backend/go/goals/test_test.py",
+            "src/python/pants/jvm/jdk_rules_test.py:tests",
+            "src/python/pants/engine/internals/buildbarn_integration_tests/buildbarn_remote_cache_integration_test.py:tests",
         ],
     )
-    roots = [register_module(b) for b in (*ALWAYS_LOADED, *scope()["backend_packages"])]
+    roots = [ENTRY, *(register_module(b) for b in (*ALWAYS_LOADED, *scope()["backend_packages"]))]
     assert calls == [
         ("dependencies", "--transitive", *roots),
         ("--changed-since=base", "--changed-dependents=direct", "list"),
