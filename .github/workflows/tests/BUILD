@@ -8,5 +8,6 @@ python_tests(
         "//.github/workflows:workflows",
         "//build-support/bin:dspot_release_build",
         "//build-support:venv_bootstrap",
+        "//src/python/pants:wheel-definition",
     ],
 )

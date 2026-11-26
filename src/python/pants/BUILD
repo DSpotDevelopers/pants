@@ -76,6 +76,9 @@ pex_binary(
 # native code. This is just a dummy file.
 resources(name="resources", sources=["py.typed", "dummy.c"])
 
+# The wheel-input contract test reads this handwritten distribution definition as runtime data.
+files(name="wheel-definition", sources=["BUILD"])
+
 __dependencies_rules__(
     (
         # test modules should not depend on other test modules
