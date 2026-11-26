@@ -41,3 +41,10 @@ def test_tests_job_installs_upstreams_test_interpreters() -> None:
     # 3.14 is the pinned standalone interpreter the bootstrap step puts on PATH. setup-python
     # publishes no 3.7 for the runners' Ubuntu 24.04.
     assert set(PYTHON_VERSIONS_PER_PLATFORM[Platform.LINUX_X86_64]) - {"3.7", "3.14"} <= installed
+
+
+def test_tests_job_keeps_pants_stock_parallelism() -> None:
+    # Upstream's test jobs leave Pants' process parallelism at its default; a pin of 1 runs the
+    # qualified suites one at a time.
+    workflow = yaml.safe_load(Path(".github/workflows/dspot-pants.yaml").read_text())
+    assert "PANTS_PROCESS_EXECUTION_LOCAL_PARALLELISM" not in workflow["jobs"]["tests"]["env"]
