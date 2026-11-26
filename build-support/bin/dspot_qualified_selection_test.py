@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from dspot_qualified_selection import ALWAYS_LOADED, ENTRY, register_module, scope, selection
 
 # Environment kinds whose suites the guarded runners run: no job there owns a Docker host path, and
@@ -70,3 +72,12 @@ def test_the_scope_names_only_environments_the_runners_qualify() -> None:
     # A Docker or remote environment can't run on these runners: adding one to the scope (because
     # the company declared it) needs a runner for it first, never a skip.
     assert set(scope()["environment_targets"]) <= RUNNABLE_ENVIRONMENTS
+
+
+def test_the_entry_root_is_pants_code_not_its_release_bundle() -> None:
+    # src/python/pants/bin/BUILD's pants_loader target depends on `:plugins`, every backend Pants
+    # ships, so a closure from it holds every backend's folder; the entry's own code does not.
+    build = Path("src/python/pants/bin/BUILD").read_text()
+    assert 'name="pants_loader"' in build and '":plugins"' in build
+    assert ENTRY == "src/python/pants/bin:bin"
+    assert 'python_sources(sources=["*.py", "!pants_loader.py"])' in build
