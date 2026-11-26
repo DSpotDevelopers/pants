@@ -32,7 +32,9 @@ def test_venv_identity_follows_the_real_interpreter(tmp_path: Path) -> None:
         ).strip()
 
     assert venv(interpreters[0]) == venv(alias), "aliases share the same interpreter"
-    assert venv(interpreters[0]) != venv(interpreters[1]), "different installations must not share a venv"
+    assert venv(interpreters[0]) != venv(interpreters[1]), (
+        "different installations must not share a venv"
+    )
 
 
 def test_both_jobs_use_the_same_self_contained_python() -> None:
@@ -43,6 +45,17 @@ def test_both_jobs_use_the_same_self_contained_python() -> None:
         assert len(bootstrap) == 1, name
         assert "PY" not in jobs[name]["env"], "the bootstrap publishes the pinned absolute path"
         assert steps.index(bootstrap[0]) < next(
-            i for i, step in enumerate(steps) if "./pants" in step.get("run", "")
+            i
+            for i, step in enumerate(steps)
+            if "./pants" in step.get("run", "")
             or step.get("run") == "build-support/bin/dspot_release_build.sh"
         )
+
+
+def test_bootstrap_proof_covers_both_runner_classes() -> None:
+    jobs = yaml.safe_load(Path(".github/workflows/dspot-pants.yaml").read_text())["jobs"]
+    assert jobs["python-bootstrap"]["strategy"]["matrix"]["runner-class"] == [
+        "heavy-ok",
+        "slot-medium",
+    ]
+    assert "python-bootstrap" in jobs["build"]["needs"]
