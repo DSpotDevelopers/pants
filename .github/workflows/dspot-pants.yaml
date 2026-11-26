@@ -104,8 +104,8 @@ jobs:
 
   build:
     needs: [source, python-bootstrap]
-    # `dspot` alone also matches the shared 1-vCPU medium slots; `heavy-ok` is carried only by the full slots of the
-    # 16-core hosts, the class dspot-company-data's heavy jobs request (COMPANY_CI_HEAVY_RUNS_ON).
+    # Use the fleet's heavy-job eligibility, as dspot-company-data's heavy jobs do.
+    # This is independent of the guarded Docker capability required by the test job below.
     runs-on: [self-hosted, linux, x64, dspot, heavy-ok]
     timeout-minutes: 90
     env:
