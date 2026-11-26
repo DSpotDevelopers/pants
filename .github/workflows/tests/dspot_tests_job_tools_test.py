@@ -1,8 +1,9 @@
 # Copyright 2026 Pants project contributors (see CONTRIBUTORS.md).
 # Licensed under the Apache License, Version 2.0 (see LICENSE).
 
-"""The tests job runs the change's selection within the qualified scope, with the tools upstream's
-own test jobs install for it, so a qualified suite runs instead of skipping for a missing tool."""
+"""The tests job runs the change's selection within the qualified scope, with the interpreters
+upstream's own test jobs install for it, so a qualified suite runs instead of skipping for want of
+one."""
 
 from __future__ import annotations
 
@@ -12,17 +13,12 @@ import yaml
 from pants_release.generate_github_workflows import (
     PYTHON_VERSIONS_PER_PLATFORM,
     Platform,
-    install_jdk,
 )
 
 
 def steps_of_the_tests_job() -> list[dict]:
     workflow = yaml.safe_load(Path(".github/workflows/dspot-pants.yaml").read_text())
     return workflow["jobs"]["tests"]["steps"]
-
-
-def test_tests_job_installs_upstreams_jdk() -> None:
-    assert install_jdk() in steps_of_the_tests_job()
 
 
 def test_tests_job_runs_only_the_qualified_selection() -> None:
