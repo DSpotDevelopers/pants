@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import pprint
+import re
 import runpy
 import sys
 from pathlib import Path
@@ -17,13 +18,18 @@ def relocate(installation: Path, destination: Path) -> None:
     # This is the build prefix of our checksum-pinned PBS archive, not the staging directory.
     if values["prefix"] != "/install":
         raise ValueError(f"Unexpected standalone Python prefix: {values['prefix']!r}")
+    # Match the build prefix as a path, including compiler flags, never the install command.
+    prefix = re.compile(r"(^|[\s=,:;'\"()]|-[ILF])/install(?=/|$|[\s,:;'\"()])")
+
+    def rebase(value: str) -> str:
+        return prefix.sub(lambda match: match[1] + str(destination), value)
+
     values = {
-        key: value.replace("/install", str(destination)) if isinstance(value, str) else value
-        for key, value in values.items()
+        key: rebase(value) if isinstance(value, str) else value for key, value in values.items()
     }
     config.write_text("build_time_vars = " + pprint.pformat(values) + "\n")
     for makefile in installation.glob("lib/python*/config-*/Makefile"):
-        makefile.write_text(makefile.read_text().replace("/install", str(destination)))
+        makefile.write_text(rebase(makefile.read_text()))
 
 
 if __name__ == "__main__":
