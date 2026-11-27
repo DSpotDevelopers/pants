@@ -68,7 +68,7 @@ def test_system_toolchain(rule_runner: RuleRunner) -> None:
     cxx_toolchain = rule_runner.request(CCToolchain, [CCToolchainRequest(CCLanguage.CXX)])
     assert cxx_toolchain.compile_command[0].endswith(
         (
-            "gcc++",
+            "g++",
             "clang++",
         )
     )
