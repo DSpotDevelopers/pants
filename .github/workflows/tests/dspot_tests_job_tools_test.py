@@ -62,7 +62,9 @@ def test_all_qualification_shards_run_even_when_another_fails() -> None:
     # The command still gives every native shard the entire selected population.
     test_tests_job_runs_only_the_qualified_selection()
     assert job["timeout-minutes"] == 30
-    result = yaml.safe_load(Path(".github/workflows/dspot-pants.yaml").read_text())["jobs"]["result"]
+    result = yaml.safe_load(Path(".github/workflows/dspot-pants.yaml").read_text())["jobs"][
+        "result"
+    ]
     assert "tests" in result["needs"]
     assert "process.env.TEST_RESULT === 'success'" in result["steps"][0]["with"]["script"]
 
