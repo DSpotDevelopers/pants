@@ -1080,6 +1080,7 @@ dependencies = [
  "tempfile",
  "testutil",
  "tokio",
+ "uuid",
  "workunit_store",
 ]
 

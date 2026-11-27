@@ -134,6 +134,7 @@ async fn test_remove_old_images() {
         let _ = ContainerCache::remove_container(
             &docker,
             container_id,
+            None,
             Some(RemoveContainerOptions {
                 force: true,
                 ..RemoveContainerOptions::default()
@@ -504,6 +505,7 @@ impl UnavailableContainerTestRunner for MissingContainerTestRunner {
         ContainerCache::remove_container(
             docker,
             container_id,
+            None,
             Some(RemoveContainerOptions {
                 force: true,
                 ..RemoveContainerOptions::default()
@@ -904,7 +906,7 @@ async fn test_apply_chroot() {
 
     let path = format!("/usr/bin:{}/bin", work_dir.path().to_str().unwrap());
 
-    assert_eq!(&path, req.env.get(&"PATH".to_string()).unwrap());
+    assert_eq!(&path, req.env.get("PATH").unwrap());
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
@@ -934,8 +936,8 @@ async fn test_chroot_placeholder() {
 
     let got_env = extract_env(result.stdout_bytes, &[]).unwrap();
     let path = format!("/usr/bin:{SANDBOX_BASE_PATH_IN_CONTAINER}");
-    assert!(got_env.get(&"PATH".to_string()).unwrap().starts_with(&path));
-    assert!(got_env.get(&"PATH".to_string()).unwrap().ends_with("/bin"));
+    assert!(got_env.get("PATH").unwrap().starts_with(&path));
+    assert!(got_env.get("PATH").unwrap().ends_with("/bin"));
 }
 
 #[parameterized(runner = {&DefaultTestRunner, &ExistingContainerTestRunner::new(IMAGE), &MissingContainerTestRunner::new(IMAGE)}, name = {"default", "existing", "missing"})]

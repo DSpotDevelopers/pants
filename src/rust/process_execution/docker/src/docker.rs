@@ -41,6 +41,8 @@ use store::{ImmutableInputs, Store};
 use task_executor::Executor;
 use workunit_store::{Metric, RunningWorkunit, in_workunit};
 
+use crate::container_cleanup::remove_container;
+
 use process_execution::local::{
     CapturedWorkdir, CapturedWorkdirError, ChildOutput, KeepSandboxes, USER_EXECUTABLE_MODE,
     apply_chroot, collect_child_outputs, create_sandbox, prepare_workdir,
@@ -144,9 +146,8 @@ pub(crate) async fn remove_old_images(
                 match summary.id {
                     Some(container_id) => {
                         log::debug!("Removing stale container {container_id}");
-                        docker
-                        .remove_container(
-                            container_id.as_str(),
+                        ContainerCache::remove_container(
+                            &docker, container_id.as_str(), None,
                             Some(RemoveContainerOptions {
                                 force: true,
                                 ..RemoveContainerOptions::default()
@@ -1086,7 +1087,7 @@ impl<'a> ContainerCache<'a> {
                                 }) => Err(format!(
                                     "Cannot prune container {container_id} with status {status}"
                                 )),
-                                Ok(ContainerInspectResponse { state: Some(ContainerState { status: Some(_), .. }), .. }) => Self::remove_container(&docker, &container_id, None)
+                                Ok(ContainerInspectResponse { state: Some(ContainerState { status: Some(_), .. }), .. }) => Self::remove_container(&docker, &container_id, None, None)
                                     .await
                                     .map_err(|err| format!(
                                         "An error occurred when trying to remove container {container_id}\n\n{err}"
@@ -1183,9 +1184,10 @@ impl<'a> ContainerCache<'a> {
     pub(crate) async fn remove_container(
         docker: &Docker,
         container_id: &str,
+        owned_sandbox: Option<&str>,
         options: Option<RemoveContainerOptions>,
     ) -> Result<(), DockerError> {
-        docker.remove_container(container_id, options).await
+        remove_container(docker, container_id, owned_sandbox, options).await
     }
 
     pub async fn shutdown(&self) -> Result<(), String> {
@@ -1218,7 +1220,7 @@ impl<'a> ContainerCache<'a> {
                 force: true,
                 ..RemoveContainerOptions::default()
             };
-            Self::remove_container(docker, id.as_str(), Some(remove_options))
+            Self::remove_container(docker, id.as_str(), None, Some(remove_options))
                 .await
                 .map_err(|err| {
                     format!("Failed to remove Docker container during shutdown `{id}`: {err:?}")
