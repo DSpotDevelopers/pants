@@ -2,19 +2,39 @@ include:
   - docker-compose.images.yaml
 
 services:
+  # Stopped after create: `compose cp` seeds these volumes through Docker's archive API.
+  seed:
+    extends:
+      file: docker-compose.images.yaml
+      service: execution-image
+    profiles: ["cache", "remote_execution"]
+    command: ["/bin/true"]
+    volumes:
+      - config:/config
+      - storage-cas:/storage-cas
+      - storage-ac:/storage-ac
+      - storage-fsac:/storage-fsac
+      - bb:/bb
+      - worker:/worker
+
+  # Every gRPC stream reaches cache/frontend from this stack's own network.
+  relay:
+    extends:
+      file: docker-compose.images.yaml
+      service: execution-image
+    profiles: ["cache", "remote_execution"]
+    command: ["sleep", "infinity"]
+
   cache:
     extends:
       file: docker-compose.images.yaml
       service: bb-storage-image
     profiles: ["cache"]
     command: ["/config/cache.jsonnet"]
-    ports:
-      - "127.0.0.1::8980"
     volumes:
-      - ${BUILDBARN_ASSETS_ROOT}/cache.jsonnet:/config/cache.jsonnet:ro
-      - ${BUILDBARN_ASSETS_ROOT}/runtime.libsonnet:/config/runtime.libsonnet:ro
-      - ${BUILDBARN_RUNTIME_ROOT}/storage-cas:/storage-cas
-      - ${BUILDBARN_RUNTIME_ROOT}/storage-ac:/storage-ac
+      - config:/config:ro
+      - storage-cas:/storage-cas
+      - storage-ac:/storage-ac
 
   storage:
     extends:
@@ -23,10 +43,10 @@ services:
     profiles: ["remote_execution"]
     command: ["/config/storage.jsonnet"]
     volumes:
-      - ${BUILDBARN_ASSETS_ROOT}/storage.jsonnet:/config/storage.jsonnet:ro
-      - ${BUILDBARN_RUNTIME_ROOT}/storage-cas:/storage-cas
-      - ${BUILDBARN_RUNTIME_ROOT}/storage-ac:/storage-ac
-      - ${BUILDBARN_RUNTIME_ROOT}/storage-fsac:/storage-fsac
+      - config:/config:ro
+      - storage-cas:/storage-cas
+      - storage-ac:/storage-ac
+      - storage-fsac:/storage-fsac
 
   frontend:
     extends:
@@ -37,10 +57,8 @@ services:
     depends_on:
       - storage
       - scheduler
-    ports:
-      - "127.0.0.1::8980"
     volumes:
-      - ${BUILDBARN_ASSETS_ROOT}/frontend.jsonnet:/config/frontend.jsonnet:ro
+      - config:/config:ro
 
   scheduler:
     extends:
@@ -51,7 +69,7 @@ services:
     depends_on:
       - storage
     volumes:
-      - ${BUILDBARN_ASSETS_ROOT}/scheduler.jsonnet:/config/scheduler.jsonnet:ro
+      - config:/config:ro
 
   runner-installer:
     extends:
@@ -60,7 +78,7 @@ services:
     profiles: ["remote_execution"]
     restart: "no"
     volumes:
-      - ${BUILDBARN_RUNTIME_ROOT}/bb:/bb
+      - bb:/bb
 
   runner:
     extends:
@@ -75,9 +93,9 @@ services:
     depends_on:
       - runner-installer
     volumes:
-      - ${BUILDBARN_ASSETS_ROOT}/runner.jsonnet:/config/runner.jsonnet:ro
-      - ${BUILDBARN_RUNTIME_ROOT}/bb:/bb
-      - ${BUILDBARN_RUNTIME_ROOT}/worker:/worker
+      - config:/config:ro
+      - bb:/bb
+      - worker:/worker
 
   worker:
     extends:
@@ -90,5 +108,13 @@ services:
       - scheduler
       - runner
     volumes:
-      - ${BUILDBARN_ASSETS_ROOT}/worker.jsonnet:/config/worker.jsonnet:ro
-      - ${BUILDBARN_RUNTIME_ROOT}/worker:/worker
+      - config:/config:ro
+      - worker:/worker
+
+volumes:
+  config:
+  storage-cas:
+  storage-ac:
+  storage-fsac:
+  bb:
+  worker:

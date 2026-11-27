@@ -17,6 +17,8 @@ from dataclasses import dataclass
 from importlib.resources import files
 from pathlib import Path
 
+from pants.engine.internals.buildbarn_integration_tests.docker_tunnel import ExecTunnel
+
 DEFAULT_INSTANCE_NAME = "fuse"
 DEFAULT_GRPC_PORT = 8980
 DEFAULT_READINESS_TIMEOUT_SECONDS = 30.0
@@ -86,6 +88,7 @@ class LocalBuildbarnStack(AbstractContextManager[CacheOnlyBuildbarn]):
         self._compose_profiles: tuple[str, ...] = ()
         self._active_services: tuple[str, ...] = ()
         self._launched: CacheOnlyBuildbarn | RemoteExecutionBuildbarn | None = None
+        self._tunnel: ExecTunnel | None = None
 
     def __enter__(self) -> CacheOnlyBuildbarn:
         self._launched = self.launch_cache_only()
@@ -109,10 +112,7 @@ class LocalBuildbarnStack(AbstractContextManager[CacheOnlyBuildbarn]):
         project_name = f"pants-buildbarn-cache-{uuid.uuid4().hex[:12]}"
         env_file = _write_compose_env_file(
             runtime_root / "compose.env",
-            {
-                "BUILDBARN_ASSETS_ROOT": str(assets_root),
-                "BUILDBARN_RUNTIME_ROOT": str(runtime_root),
-            },
+            {},
         )
         compose_file = assets_root / _COMPOSE_FILE_NAME
 
@@ -121,11 +121,12 @@ class LocalBuildbarnStack(AbstractContextManager[CacheOnlyBuildbarn]):
         self._env_file = env_file
         self._compose_file = compose_file
         self._compose_profiles = ("cache",)
-        self._active_services = ("cache",)
+        self._active_services = ("cache", "relay")
 
         try:
+            self._seed_volumes()
             self._run_compose(["up", "-d", *self._active_services], check=True)
-            grpc_port = _discover_compose_host_port(
+            grpc_port = _connect_service(
                 service="cache",
                 container_port=DEFAULT_GRPC_PORT,
                 timeout_seconds=self.readiness_timeout_seconds,
@@ -171,10 +172,7 @@ class LocalBuildbarnStack(AbstractContextManager[CacheOnlyBuildbarn]):
         project_name = f"pants-buildbarn-re-{uuid.uuid4().hex[:12]}"
         env_file = _write_compose_env_file(
             runtime_root / "compose.env",
-            {
-                "BUILDBARN_ASSETS_ROOT": str(assets_root),
-                "BUILDBARN_RUNTIME_ROOT": str(runtime_root),
-            },
+            {},
         )
         compose_file = assets_root / _COMPOSE_FILE_NAME
         required_services = ("storage", "frontend", "scheduler", "runner", "worker")
@@ -191,11 +189,13 @@ class LocalBuildbarnStack(AbstractContextManager[CacheOnlyBuildbarn]):
             "runner-installer",
             "runner",
             "worker",
+            "relay",
         )
 
         try:
+            self._seed_volumes()
             self._run_compose(["up", "-d", *self._active_services], check=True)
-            grpc_port = _discover_compose_host_port(
+            grpc_port = _connect_service(
                 service="frontend",
                 container_port=DEFAULT_GRPC_PORT,
                 timeout_seconds=self.readiness_timeout_seconds,
@@ -208,9 +208,14 @@ class LocalBuildbarnStack(AbstractContextManager[CacheOnlyBuildbarn]):
                 stack=self,
                 required_services=required_services,
             )
-            _wait_for_path(
-                runtime_root / "worker" / "runner", timeout_seconds=self.readiness_timeout_seconds
-            )
+            deadline = time.monotonic() + self.readiness_timeout_seconds
+            while self._run_compose(
+                ["exec", "-T", "runner", "test", "-S", "/worker/runner"], check=False
+            ).returncode:
+                _raise_if_required_services_exited(self, required_services)
+                if time.monotonic() >= deadline:
+                    raise FetchError("Timed out waiting for Buildbarn runner socket in its volume")
+                time.sleep(0.1)
         except Exception:
             self.teardown(remove_temp_dir=False)
             raise
@@ -231,6 +236,9 @@ class LocalBuildbarnStack(AbstractContextManager[CacheOnlyBuildbarn]):
         return launched
 
     def teardown(self, *, remove_temp_dir: bool = True) -> None:
+        if self._tunnel is not None:
+            self._tunnel.__exit__(None, None, None)
+            self._tunnel = None
         if self._project_name is not None and self._runtime_root is not None:
             _write_compose_logs(self)
             self._run_compose(["down", "-v", "--remove-orphans"], check=False)
@@ -254,27 +262,38 @@ class LocalBuildbarnStack(AbstractContextManager[CacheOnlyBuildbarn]):
         (runtime_root / "logs").mkdir(parents=True, exist_ok=True)
         return runtime_root
 
-    def _run_compose(self, args: Sequence[str], *, check: bool) -> subprocess.CompletedProcess[str]:
+    def _seed_volumes(self) -> None:
+        assert self._runtime_root is not None
+        self._run_compose(["create", "seed"], check=True)
+        for source, destination in [
+            ("assets", "config"),
+            *[(p, p) for p in ("storage-cas", "storage-ac", "storage-fsac", "worker", "bb")],
+        ]:
+            path = self._runtime_root / source
+            if path.is_dir():
+                self._run_compose(["cp", f"{path}/.", f"seed:/{destination}/"], check=True)
+
+    def _compose_command(self, args: Sequence[str]) -> list[str]:
         if self._project_name is None or self._env_file is None or self._compose_file is None:
             raise FetchError("Buildbarn Compose stack was used before being configured")
         profile_args = tuple(
             arg for profile in self._compose_profiles for arg in ("--profile", profile)
         )
-        return self.run_command(
-            [
-                self.docker_binary,
-                "compose",
-                "--project-name",
-                self._project_name,
-                "--file",
-                str(self._compose_file),
-                "--env-file",
-                str(self._env_file),
-                *profile_args,
-                *args,
-            ],
-            check,
-        )
+        return [
+            self.docker_binary,
+            "compose",
+            "--project-name",
+            self._project_name,
+            "--file",
+            str(self._compose_file),
+            "--env-file",
+            str(self._env_file),
+            *profile_args,
+            *args,
+        ]
+
+    def _run_compose(self, args: Sequence[str], *, check: bool) -> subprocess.CompletedProcess[str]:
+        return self.run_command(self._compose_command(args), check)
 
 
 def _prepare_storage_dirs(runtime_root: Path) -> None:
@@ -356,7 +375,7 @@ def _load_configured_service_image(config_path: Path, service: str) -> str:
     raise FetchError(f"Buildbarn Compose image config does not define image for {service!r}")
 
 
-def _discover_compose_host_port(
+def _connect_service(
     *,
     service: str,
     container_port: int,
@@ -367,16 +386,27 @@ def _discover_compose_host_port(
     deadline = time.time() + timeout_seconds
     while time.time() < deadline:
         _raise_if_required_services_exited(stack, required_services)
-        result = stack._run_compose(["port", service, f"{container_port}"], check=False)
-        if result.returncode == 0:
-            port_mapping = result.stdout.strip()
-            _, _, host_port = port_mapping.rpartition(":")
-            if host_port.isdigit():
-                return int(host_port)
+        # The relay is an owned stack container. No runner-container network mutation or host port.
+        args = [
+            "exec",
+            "-T",
+            "relay",
+            "bash",
+            "-c",
+            "set -e; exec 3<>/dev/tcp/$1/$2",
+            "--",
+            service,
+            str(container_port),
+        ]
+        if stack._run_compose(args, check=False).returncode == 0:
+            args[5] = (
+                "set -e; exec 3<>/dev/tcp/$1/$2; cat <&3 & reader=$!; "
+                'cat >&3; kill "$reader"; wait "$reader"'
+            )
+            stack._tunnel = ExecTunnel(stack._compose_command(args))
+            return stack._tunnel.port
         time.sleep(0.1)
-    raise FetchError(
-        f"Timed out waiting for Compose to publish port {container_port} for {service}"
-    )
+    raise FetchError(f"Timed out waiting for Buildbarn {service}:{container_port} on its network")
 
 
 def _wait_for_tcp_readiness(
@@ -395,15 +425,6 @@ def _wait_for_tcp_readiness(
         except OSError:
             time.sleep(0.1)
     raise FetchError(f"Timed out waiting for Buildbarn gRPC port {port} to become ready")
-
-
-def _wait_for_path(path: Path, *, timeout_seconds: float) -> None:
-    deadline = time.time() + timeout_seconds
-    while time.time() < deadline:
-        if path.exists():
-            return
-        time.sleep(0.1)
-    raise FetchError(f"Timed out waiting for Buildbarn path to appear: {path}")
 
 
 def _raise_if_required_services_exited(
