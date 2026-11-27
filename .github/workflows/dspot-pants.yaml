@@ -133,6 +133,13 @@ jobs:
           if ! git diff --quiet "$BASE...HEAD" -- src/rust/dep_inference; then
             ./cargo test --locked -p dep_inference javascript::tests
           fi
+      - name: Test changed Docker archive transfer in Rust
+        env:
+          BASE: ${{ needs.source.outputs.base }}
+        run: |
+          if ! git diff --quiet "$BASE...HEAD" -- src/rust/process_execution/docker; then
+            ./cargo test --locked --release -p docker volume_archive::
+          fi
       - name: Retain the matching native engine
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:

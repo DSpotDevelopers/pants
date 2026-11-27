@@ -131,3 +131,10 @@ Buildbarn's test stacks copy their configuration and empty state directories int
 Docker volumes. An owned relay reaches the services on their Compose network over Docker exec;
 only the test process listens locally. No daemon-host directory or published port is used.
 Remove this patch when the pinned upstream stack supports a separate Docker daemon this way.
+
+## Docker sandbox archive transfer
+
+The Docker executor's archive helper stages each returned sandbox before replacing local inputs,
+retaining modes and symlinks without overwriting hard-linked CAS data. It refuses foreign roots,
+special files and traversal outside staging. Its caller replaces host binds in the next patch.
+Remove both parts when a pinned upstream executor supports a separate daemon through volume/copy I/O.
