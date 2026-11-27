@@ -41,3 +41,15 @@ def test_tests_job_installs_upstreams_test_interpreters() -> None:
     # 3.14 is the pinned standalone interpreter the bootstrap step puts on PATH. setup-python
     # publishes no 3.7 for the runners' Ubuntu 24.04.
     assert set(PYTHON_VERSIONS_PER_PLATFORM[Platform.LINUX_X86_64]) - {"3.7", "3.14"} <= installed
+
+
+def test_tests_job_uses_the_granted_cpu_budget_before_selection() -> None:
+    workflow = yaml.safe_load(Path(".github/workflows/dspot-pants.yaml").read_text())
+    job = workflow["jobs"]["tests"]
+    assert "PANTS_PROCESS_EXECUTION_LOCAL_PARALLELISM" not in job["env"]
+    steps = job["steps"]
+    budget = next(i for i, s in enumerate(steps) if "dspot_slot_cpus.py" in s.get("run", ""))
+    selection = next(i for i, s in enumerate(steps) if "dspot_qualified_selection.py" in s.get("run", ""))
+    assert budget < selection
+    assert 'PANTS_PROCESS_EXECUTION_LOCAL_PARALLELISM=${cpus}' in steps[budget]["run"]
+    assert '>> "$GITHUB_ENV"' in steps[budget]["run"]
