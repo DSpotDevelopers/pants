@@ -2,3 +2,5 @@ self-hosted-runner:
   labels:
     - dspot
     - slot-cpus-1
+    - heavy-ok
+    - docker-socket
