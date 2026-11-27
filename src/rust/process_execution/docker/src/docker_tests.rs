@@ -19,6 +19,7 @@ use testutil::data::{TestData, TestDirectory};
 use testutil::{owned_string_vec, relative_paths};
 use workunit_store::{RunningWorkunit, WorkunitStore};
 
+use crate::container_cleanup::VolumeFixture;
 use crate::docker::{
     ContainerCache, DockerOnceCell, ImagePullCache, PANTS_CONTAINER_BUILDROOT_LABEL_KEY,
     PANTS_CONTAINER_ENVIRONMENT_LABEL_KEY, SANDBOX_BASE_PATH_IN_CONTAINER, remove_old_images,
@@ -134,6 +135,7 @@ async fn test_remove_old_images() {
         let _ = ContainerCache::remove_container(
             &docker,
             container_id,
+            None,
             Some(RemoveContainerOptions {
                 force: true,
                 ..RemoveContainerOptions::default()
@@ -178,6 +180,7 @@ trait DockerCommandTestRunner: Send + Sync {
     ) -> Result<crate::docker::CommandRunner<'a>, String>;
 
     async fn assert_correct_container(&self, docker: &Docker, actual_container_id: &str);
+    async fn assert_volumes_released(&self, _docker: &Docker) {}
 
     async fn run_command_via_docker_in_dir(
         &self,
@@ -263,6 +266,7 @@ trait DockerCommandTestRunner: Send + Sync {
             None => panic!("No labels found for container {container_id}"),
         }
         runner.shutdown().await?;
+        self.assert_volumes_released(docker_ref).await;
         assert!(!check_container_exists(docker_ref, &container_id).await?);
         Ok(LocalTestResult {
             original,
@@ -305,7 +309,19 @@ impl DockerCommandTestRunner for DefaultTestRunner {
         )
     }
 
-    async fn assert_correct_container(&self, _docker: &Docker, _actual_container_id: &str) {}
+    async fn assert_correct_container(&self, docker: &Docker, actual_container_id: &str) {
+        let mounts = docker
+            .inspect_container(actual_container_id, None)
+            .await
+            .unwrap()
+            .mounts
+            .unwrap();
+        assert_eq!(mounts.len(), 2);
+        for mount in mounts {
+            assert_eq!(mount.typ.unwrap().to_string(), "volume");
+            assert!(mount.name.is_some());
+        }
+    }
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
@@ -421,6 +437,9 @@ trait UnavailableContainerTestRunner: DockerCommandTestRunner {
     async fn make_container_unavailable(&self, docker: &Docker) -> Result<(), String>;
 
     fn get_initial_container_id(&self) -> String;
+    fn initial_volumes(&self) -> Option<&VolumeFixture> {
+        None
+    }
 }
 
 #[async_trait]
@@ -459,17 +478,25 @@ impl<T: UnavailableContainerTestRunner> DockerCommandTestRunner for T {
             check_container_exists(docker, &initial_container_id).await,
             Ok(false)
         ));
+        self.assert_volumes_released(docker).await;
+    }
+    async fn assert_volumes_released(&self, docker: &Docker) {
+        if let Some(volumes) = self.initial_volumes() {
+            volumes.assert_released(docker).await;
+        }
     }
 }
 
 struct MissingContainerTestRunner {
     inner: ExistingContainerTestRunner,
+    volumes: OnceLock<VolumeFixture>,
 }
 
 impl MissingContainerTestRunner {
     fn new(image_name: &str) -> Self {
         MissingContainerTestRunner {
             inner: ExistingContainerTestRunner::new(image_name),
+            volumes: OnceLock::new(),
         }
     }
 }
@@ -501,22 +528,32 @@ impl UnavailableContainerTestRunner for MissingContainerTestRunner {
 
     async fn make_container_unavailable(&self, docker: &Docker) -> Result<(), String> {
         let container_id = self.inner.container_id.get().unwrap().0.as_str();
-        ContainerCache::remove_container(
-            docker,
-            container_id,
-            Some(RemoveContainerOptions {
-                force: true,
-                ..RemoveContainerOptions::default()
-            }),
-        )
+        assert!(
+            self.volumes
+                .set(VolumeFixture::snapshot(docker, container_id).await)
+                .is_ok()
+        );
+        docker
+            .remove_container(
+                container_id,
+                Some(RemoveContainerOptions {
+                    force: true,
+                    ..RemoveContainerOptions::default()
+                }),
+            )
         .await
         .map_err(|err| {
             format!("Failed to remove Docker container during missing container test setup `{container_id}`: {err:?}")
-        })
+        })?;
+        self.volumes.get().unwrap().assert_present(docker).await;
+        Ok(())
     }
 
     fn get_initial_container_id(&self) -> String {
         self.inner.get_container_id()
+    }
+    fn initial_volumes(&self) -> Option<&VolumeFixture> {
+        self.volumes.get()
     }
 }
 
@@ -904,7 +941,7 @@ async fn test_apply_chroot() {
 
     let path = format!("/usr/bin:{}/bin", work_dir.path().to_str().unwrap());
 
-    assert_eq!(&path, req.env.get(&"PATH".to_string()).unwrap());
+    assert_eq!(&path, req.env.get("PATH").unwrap());
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
@@ -934,8 +971,8 @@ async fn test_chroot_placeholder() {
 
     let got_env = extract_env(result.stdout_bytes, &[]).unwrap();
     let path = format!("/usr/bin:{SANDBOX_BASE_PATH_IN_CONTAINER}");
-    assert!(got_env.get(&"PATH".to_string()).unwrap().starts_with(&path));
-    assert!(got_env.get(&"PATH".to_string()).unwrap().ends_with("/bin"));
+    assert!(got_env.get("PATH").unwrap().starts_with(&path));
+    assert!(got_env.get("PATH").unwrap().ends_with("/bin"));
 }
 
 #[parameterized(runner = {&DefaultTestRunner, &ExistingContainerTestRunner::new(IMAGE), &MissingContainerTestRunner::new(IMAGE)}, name = {"default", "existing", "missing"})]
@@ -1275,10 +1312,14 @@ async fn run_prune_container_test(runner: &dyn DockerCommandTestRunner) -> bool 
         .container_cache
         .prune_container(IMAGE, &key.1)
         .await;
-    tokio::time::sleep(Duration::from_secs(3)).await;
-    check_container_exists(docker.get().await.unwrap(), container_id)
+    let exists = check_container_exists(docker.get().await.unwrap(), container_id)
         .await
-        .unwrap()
+        .unwrap();
+    command_runner.shutdown().await.unwrap();
+    runner
+        .assert_volumes_released(docker.get().await.unwrap())
+        .await;
+    exists
 }
 
 #[parameterized(runner = {&MissingContainerTestRunner::new(IMAGE), &ExitedContainerTestRunner::new(IMAGE)}, name = {"missing", "exited"})]
