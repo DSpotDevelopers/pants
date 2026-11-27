@@ -305,7 +305,19 @@ impl DockerCommandTestRunner for DefaultTestRunner {
         )
     }
 
-    async fn assert_correct_container(&self, _docker: &Docker, _actual_container_id: &str) {}
+    async fn assert_correct_container(&self, docker: &Docker, actual_container_id: &str) {
+        let mounts = docker
+            .inspect_container(actual_container_id, None)
+            .await
+            .unwrap()
+            .mounts
+            .unwrap();
+        assert_eq!(mounts.len(), 2);
+        for mount in mounts {
+            assert_eq!(mount.typ.unwrap().to_string(), "volume");
+            assert!(mount.name.is_some());
+        }
+    }
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
@@ -904,7 +916,7 @@ async fn test_apply_chroot() {
 
     let path = format!("/usr/bin:{}/bin", work_dir.path().to_str().unwrap());
 
-    assert_eq!(&path, req.env.get(&"PATH".to_string()).unwrap());
+    assert_eq!(&path, req.env.get("PATH").unwrap());
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
@@ -934,8 +946,8 @@ async fn test_chroot_placeholder() {
 
     let got_env = extract_env(result.stdout_bytes, &[]).unwrap();
     let path = format!("/usr/bin:{SANDBOX_BASE_PATH_IN_CONTAINER}");
-    assert!(got_env.get(&"PATH".to_string()).unwrap().starts_with(&path));
-    assert!(got_env.get(&"PATH".to_string()).unwrap().ends_with("/bin"));
+    assert!(got_env.get("PATH").unwrap().starts_with(&path));
+    assert!(got_env.get("PATH").unwrap().ends_with("/bin"));
 }
 
 #[parameterized(runner = {&DefaultTestRunner, &ExistingContainerTestRunner::new(IMAGE), &MissingContainerTestRunner::new(IMAGE)}, name = {"default", "existing", "missing"})]
