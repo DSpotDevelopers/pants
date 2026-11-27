@@ -125,12 +125,17 @@ project is now installed once per session, as one install of the whole project: 
 its `node_modules` tree, and concurrent per-package installs into one tree race. Sandboxed environments keep the
 cached per-package install and its captured `node_modules` digest unchanged.
 
+## Buildbarn from containerized jobs
+
+Buildbarn's test stacks copy their configuration and empty state directories into project-scoped
+Docker volumes. An owned relay reaches the services on their Compose network over Docker exec;
+only the test process listens locally. No daemon-host directory or published port is used.
+Remove this patch when the pinned upstream stack supports a separate Docker daemon this way.
+
 ## Docker sandbox archive transfer
 
 The Docker executor's archive helper stages each returned sandbox before replacing local inputs,
 retaining modes and symlinks without overwriting hard-linked CAS data. It refuses foreign roots,
-special files and traversal outside staging. Its caller copies the complete declared digest into a per-container sandbox volume and copies
-outputs back before local capture. Named caches remain a separate persistent volume; shutdown and
-stale-container removal delete only the disposable sandbox volume. Retained-sandbox replay also
-uses copy I/O and writes replay outputs beside the original, preserving its input links.
-Remove both parts when a pinned upstream executor supports a separate daemon through volume/copy I/O.
+special files and traversal outside staging. The executor and retained replay copy declared inputs/outputs through owned sandbox volumes; recovery/shutdown deletes those volumes and preserves named caches.
+The lifecycle primitive allocates disposable sandbox volumes and accepts their retained identity after a container disappears.
+Remove these patches when a pinned upstream executor supports a separate daemon through volume/copy I/O.
