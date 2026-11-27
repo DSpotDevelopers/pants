@@ -80,7 +80,18 @@ def reusable_rule_runner() -> RuleRunner:
 
 
 def _prepare_rule_runner(rule_runner: RuleRunner, package_manager: str) -> RuleRunner:
-    rule_runner = _new_rule_runner()
+    # Keep downloaded tools and their materialized immutable inputs in one engine. Each case
+    # still starts with an empty project and a new session, including after coverage options.
+    removed = {""}
+    for name in ("jest_project", "mocha_project"):
+        project = Path(rule_runner.build_root, name)
+        if project.exists():
+            removed.update(
+                str(path.relative_to(rule_runner.build_root)) for path in project.rglob("*")
+            )
+            removed.add(name)
+            shutil.rmtree(project)
+    rule_runner.scheduler.invalidate_files(removed)
     rule_runner.set_options(
         [
             f"--nodejs-package-manager={package_manager}",
