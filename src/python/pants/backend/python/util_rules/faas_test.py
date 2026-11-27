@@ -58,6 +58,7 @@ class MockFaaS(Target):
 
 def _new_rule_runner() -> RuleRunner:
     return RuleRunner(
+        isolated_local_store=True,
         rules=[
             *target_type_rules(),
             *python_target_types_rules(),
