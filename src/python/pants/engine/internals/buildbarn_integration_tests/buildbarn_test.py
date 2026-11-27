@@ -7,6 +7,8 @@ import subprocess
 from collections.abc import Sequence
 from pathlib import Path
 
+import pytest
+
 from pants.engine.internals.buildbarn_integration_tests import stack as buildbarn
 
 
@@ -104,3 +106,62 @@ def test_write_compose_logs_uses_compose_command(tmp_path: Path) -> None:
             False,
         )
     ]
+
+
+def test_compose_uses_only_owned_volumes_and_has_no_host_ports() -> None:
+    import yaml
+
+    config = yaml.safe_load(buildbarn._CONFIG_ROOT.joinpath("docker-compose.yaml").read_text())
+    for service in config["services"].values():
+        assert not service.get("ports"), "The daemon host's loopback is not the job's loopback"
+        for mount in service.get("volumes", ()):
+            source = mount.split(":")[0]
+            assert source in config["volumes"], f"Host bind: {mount}"
+    assert "relay" in config["services"]
+    assert "seed" in config["services"]
+
+
+@pytest.mark.parametrize("remote", [False, True])
+def test_stack_copies_inputs_before_start_and_tunnels_on_its_network(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, remote: bool
+) -> None:
+    commands: list[tuple[str, ...]] = []
+    tunnels: list[tuple[str, ...]] = []
+    closed: list[bool] = []
+
+    def run(args: Sequence[str], check: bool) -> subprocess.CompletedProcess[str]:
+        commands.append(tuple(args[args.index("--profile") + 2 :]))
+        return completed_process(args)
+
+    class Tunnel:
+        port = 27123
+
+        def __init__(self, args: Sequence[str]) -> None:
+            tunnels.append(tuple(args))
+
+        def __exit__(self, *args) -> None:
+            closed.append(True)
+
+    monkeypatch.setattr(buildbarn, "ExecTunnel", Tunnel)
+    monkeypatch.setattr(buildbarn, "_wait_for_tcp_readiness", lambda **kwargs: None)
+    stack = buildbarn.LocalBuildbarnStack(temp_dir=tmp_path, run_command=run)
+    launched = stack.launch_remote_execution() if remote else stack.launch_cache_only()
+    assert launched.address == "grpc://127.0.0.1:27123"  # Job-local relay, no daemon-host listener.
+    assert commands[0] == ("create", "seed")
+    up = next(i for i, command in enumerate(commands) if command[0] == "up")
+    copied = [command for command in commands[:up] if command[0] == "cp"]
+    assert {command[-1] for command in copied} == {
+        "seed:/config/",
+        "seed:/storage-cas/",
+        "seed:/storage-ac/",
+        *({"seed:/storage-fsac/", "seed:/worker/", "seed:/bb/"} if remote else set()),
+    }
+    assert (tmp_path / "assets" / "runtime.libsonnet").read_text().startswith("{\n")
+    assert tunnels[0][-2:] == (("frontend" if remote else "cache"), "8980")
+    assert "relay" in tunnels[0] and "/dev/tcp/$1/$2" in tunnels[0][-4]
+    if remote:
+        assert ("exec", "-T", "runner", "test", "-S", "/worker/runner") in commands
+    assert not any(command[0] == "port" for command in commands)
+    stack.teardown()
+    assert closed == [True]
+    assert commands[-1] == ("down", "-v", "--remove-orphans")
