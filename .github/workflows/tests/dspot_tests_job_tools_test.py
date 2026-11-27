@@ -53,6 +53,20 @@ def test_tests_job_runs_pants_at_the_slots_cpus() -> None:
     assert budget < next(i for i, r in enumerate(runs) if "./pants" in r)
 
 
+def test_all_qualification_shards_run_even_when_another_fails() -> None:
+    job = yaml.safe_load(Path(".github/workflows/dspot-pants.yaml").read_text())["jobs"]["tests"]
+    shards = job["strategy"]["matrix"]["shard"]
+    assert job["strategy"]["fail-fast"] is False
+    assert shards == list(range(4))
+    assert job["env"]["PANTS_TEST_SHARD"] == "${{ matrix.shard }}/4"
+    # The command still gives every native shard the entire selected population.
+    test_tests_job_runs_only_the_qualified_selection()
+    assert job["timeout-minutes"] == 30
+    result = yaml.safe_load(Path(".github/workflows/dspot-pants.yaml").read_text())["jobs"]["result"]
+    assert "tests" in result["needs"]
+    assert "process.env.TEST_RESULT === 'success'" in result["steps"][0]["with"]["script"]
+
+
 def test_tests_job_restores_and_saves_its_pants_cache() -> None:
     workflow = yaml.safe_load(Path(".github/workflows/dspot-pants.yaml").read_text())
     job = workflow["jobs"]["tests"]
