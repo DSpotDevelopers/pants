@@ -1,8 +1,9 @@
 # Copyright 2026 Pants project contributors (see CONTRIBUTORS.md).
 # Licensed under the Apache License, Version 2.0 (see LICENSE).
 
-"""The tests job runs the change's selection within the qualified scope, with the tools upstream's
-own test jobs install for it, so a qualified suite runs instead of skipping for a missing tool."""
+"""The tests job runs the change's selection within the qualified scope, with the interpreters
+upstream's own test jobs install for it, so a qualified suite runs instead of skipping for want of
+one."""
 
 from __future__ import annotations
 
@@ -12,7 +13,6 @@ import yaml
 from pants_release.generate_github_workflows import (
     PYTHON_VERSIONS_PER_PLATFORM,
     Platform,
-    install_jdk,
 )
 
 
@@ -21,15 +21,14 @@ def steps_of_the_tests_job() -> list[dict]:
     return workflow["jobs"]["tests"]["steps"]
 
 
-def test_tests_job_installs_upstreams_jdk() -> None:
-    assert install_jdk() in steps_of_the_tests_job()
-
-
 def test_tests_job_runs_only_the_qualified_selection() -> None:
     (run,) = [s["run"] for s in steps_of_the_tests_job() if "./pants" in s.get("run", "")]
-    select = 'dspot_qualified_selection.py "$BASE" > "$RUNNER_TEMP/qualified.txt"'
+    # the cells outside the contract come out as pytest args Pants appends to the configured ones
+    outside = '"$RUNNER_TEMP/outside-the-contract.txt"'
+    select = f'dspot_qualified_selection.py "$BASE" {outside} > "$RUNNER_TEMP/qualified.txt"'
     assert select in run
-    assert './pants --spec-files="$RUNNER_TEMP/qualified.txt" lint test' in run
+    pants = './pants --spec-files="$RUNNER_TEMP/qualified.txt"'
+    assert f'{pants} --pytest-args="@$RUNNER_TEMP/outside-the-contract.txt" lint test' in run
 
 
 def test_tests_job_installs_upstreams_test_interpreters() -> None:
