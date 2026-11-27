@@ -37,9 +37,11 @@ def test_tests_job_installs_upstreams_test_interpreters() -> None:
         s for s in steps_of_the_tests_job() if s.get("uses", "").startswith("actions/setup-python@")
     ]
     assert len(setup) == 1
-    installed = set(setup[0]["with"]["python-version"].split())
-    # 3.14 is the pinned standalone interpreter the bootstrap step puts on PATH. setup-python
-    # publishes no 3.7 for the runners' Ubuntu 24.04.
+    installed = {
+        ".".join(version.split(".")[:2]) for version in setup[0]["with"]["python-version"].split()
+    }
+    # setup-python publishes no 3.7 for the runners' Ubuntu 24.04. Exact patch pins on
+    # the release line still provide their corresponding upstream minor versions.
     assert set(PYTHON_VERSIONS_PER_PLATFORM[Platform.LINUX_X86_64]) - {"3.7", "3.14"} <= installed
 
 

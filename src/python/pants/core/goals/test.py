@@ -40,6 +40,7 @@ from pants.core.util_rules.partitions import (
     _BatchBase,
     _PartitionFieldSetsRequestBase,
 )
+from pants.core.util_rules.sharding import timed_shards
 from pants.engine.addresses import Address
 from pants.engine.collection import Collection
 from pants.engine.console import Console
@@ -79,7 +80,14 @@ from pants.engine.target import (
     parse_shard_spec,
 )
 from pants.engine.unions import UnionMembership, UnionRule, distinct_union_type_per_subclass, union
-from pants.option.option_types import BoolOption, EnumOption, IntOption, StrListOption, StrOption
+from pants.option.option_types import (
+    BoolOption,
+    DictOption,
+    EnumOption,
+    IntOption,
+    StrListOption,
+    StrOption,
+)
 from pants.util.collections import partition_sequentially
 from pants.util.dirutil import safe_open
 from pants.util.docutil import bin_name
@@ -646,6 +654,31 @@ class TestSubsystem(GoalSubsystem):
             """
         ),
     )
+    shard_timings = DictOption[float](
+        default={},
+        fromfile=True,
+        help=softwrap(
+            """
+            Historical process execution seconds by target address. With `--shard=k/N`,
+            assign complete backend test batches longest-time-first to the least-loaded
+            shard, instead of hashing individual addresses. All shards must use the same
+            immutable history and graph. Load a JSON dictionary with `@path/to/timings.json`.
+            New addresses remain included, estimated at the largest recorded address time.
+            An empty dictionary retains address-hash sharding.
+            """
+        ),
+    )
+    shard_timings_output = StrOption(
+        default=None,
+        help=softwrap(
+            """
+            Write this invocation's measured process seconds by address as JSON to this
+            path. A native batch's time is shared equally among its addresses. Combine
+            disjoint shards' dictionaries for a later invocation's `--shard-timings`.
+            Workunit queueing time is excluded. Missing results produce no measurement.
+            """
+        ),
+    )
     timeouts = BoolOption(
         default=True,
         help=softwrap(
@@ -973,7 +1006,7 @@ async def run_tests(
             goal_description=goal_description,
             no_applicable_targets_behavior=no_applicable_targets_behavior,
             shard=shard,
-            num_shards=num_shards,
+            num_shards=-1 if test_subsystem.shard_timings else num_shards,
         ),
         **implicitly(),
     )
@@ -985,6 +1018,16 @@ async def run_tests(
         local_environment_name,
         test_subsystem,
     )
+    if test_subsystem.shard_timings:
+        assignments = timed_shards(
+            [
+                tuple(field_set.address.spec for field_set in batch.elements)
+                for batch in test_batches
+            ],
+            test_subsystem.shard_timings,
+            num_shards if num_shards > 0 else 1,
+        )
+        test_batches = [test_batches[index] for index in assignments[shard]]
 
     environment_names = await concurrently(
         resolve_single_environment_name(
@@ -1010,6 +1053,19 @@ async def run_tests(
         )
         for batch, environment_name in to_test
     )
+
+    if test_subsystem.shard_timings_output:
+        timings: dict[str, float] = {}
+        for result in results:
+            elapsed = result.result_metadata.total_elapsed_ms if result.result_metadata else None
+            if elapsed is None or not result.addresses:
+                continue
+            share = elapsed / 1000 / len(result.addresses)
+            for address in result.addresses:
+                timings[address.spec] = timings.get(address.spec, 0.0) + share
+        with safe_open(test_subsystem.shard_timings_output, "w") as output:
+            json.dump(timings, output, sort_keys=True)
+            output.write("\n")
 
     # Print summary.
     exit_code = 0

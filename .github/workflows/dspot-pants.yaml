@@ -154,6 +154,13 @@ jobs:
           if ! git diff --quiet "$BASE...HEAD" -- src/rust/dep_inference; then
             ./cargo test --locked -p dep_inference javascript::tests
           fi
+      - name: Test changed Docker archive transfer in Rust
+        env:
+          BASE: ${{ needs.source.outputs.base }}
+        run: |
+          if ! git diff --quiet "$BASE...HEAD" -- src/rust/process_execution/docker; then
+            ./cargo test --locked --release -p docker volume_archive::
+          fi
       - name: Retain the matching native engine
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
@@ -232,16 +239,17 @@ jobs:
           distribution: adopt
           java-version: '11'
       # Upstream's Linux list without 3.7, which setup-python doesn't publish for the runners' Ubuntu
-      # 24.04, and 3.14, the standalone interpreter installed immediately afterwards for Pants itself.
+      # 24.04. Keep the release's fixture versions; Pants itself uses the pinned standalone below.
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: |
-            3.8
+            3.8.18
             3.9
-            3.10
-            3.11
+            3.10.22
+            3.11.18
             3.12
             3.13
+            3.14
       - name: Install the pinned standalone Python
         run: build-support/bin/dspot_ci_python.sh
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0

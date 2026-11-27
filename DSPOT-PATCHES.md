@@ -124,3 +124,10 @@ cached install skipped in a new checkout leaves the tests with no `node_modules`
 project is now installed once per session, as one install of the whole project: every package of a project shares
 its `node_modules` tree, and concurrent per-package installs into one tree race. Sandboxed environments keep the
 cached per-package install and its captured `node_modules` digest unchanged.
+
+## Docker sandbox archive transfer
+
+The Docker executor's archive helper stages each returned sandbox before replacing local inputs,
+retaining modes and symlinks without overwriting hard-linked CAS data. It refuses foreign roots,
+special files and traversal outside staging. Its caller replaces host binds in the next patch.
+Remove both parts when a pinned upstream executor supports a separate daemon through volume/copy I/O.
