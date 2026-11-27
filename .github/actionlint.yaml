@@ -3,3 +3,5 @@ self-hosted-runner:
     - dspot
     - slot-cpus-1
     - slot-medium
+    - heavy-ok
+    - docker-socket

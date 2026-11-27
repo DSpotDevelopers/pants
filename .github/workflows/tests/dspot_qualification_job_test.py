@@ -19,8 +19,7 @@ def test_python_313_integration_cells_have_their_interpreter() -> None:
         if step.get("uses", "").startswith("actions/setup-python@")
     ]
     versions = {
-        ".".join(version.split(".")[:2])
-        for version in setup["with"]["python-version"].split()
+        ".".join(version.split(".")[:2]) for version in setup["with"]["python-version"].split()
     }
     assert "3.13" in versions
 

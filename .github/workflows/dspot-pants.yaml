@@ -168,7 +168,8 @@ jobs:
     needs: [source, build]
     # The build's runner class: the focused suites run up to 6 minutes each (a JavaScript integration suite 202 s of
     # its 240 s limit), and a 1-vCPU medium slot shared with other jobs ran past them (run 45668070356).
-    runs-on: [self-hosted, linux, x64, dspot]
+    # Core integration suites also exercise Docker; only the guarded socket runners provide it.
+    runs-on: [self-hosted, linux, x64, dspot, heavy-ok, docker-socket]
     timeout-minutes: 30
     env:
       PY: python3.14
@@ -208,6 +209,7 @@ jobs:
             3.8.18
             3.10.22
             3.11.18
+            3.13
       - name: Bootstrap Python for clean Pants subprocesses
         run: |
           bootstrap_python="$(bash build-support/bin/dspot_bootstrap_python.sh)"
@@ -219,14 +221,16 @@ jobs:
           path: src/python/pants
       - name: Restore executable permissions
         run: chmod +x src/python/pants/bin/native_client src/python/pants/bin/sandboxer src/python/pants/bin/pants_lock
-      - name: Run only the patch and its direct dependent suites
+      # Pants computes the change and its direct dependents within the declared release scope.
+      - name: Run only the patch and its direct dependent suites, within the qualified scope
         env:
           BASE: ${{ needs.source.outputs.base }}
           EXPECTED_HEAD: ${{ needs.source.outputs.head }}
         run: |
           test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          "$PY" build-support/bin/dspot_qualified_selection.py "$BASE" > "$RUNNER_TEMP/qualified.txt"
           TIMEFORMAT='tests elapsed=%R user=%U system=%S seconds'
-          time ./pants --changed-since="$BASE" --changed-dependents=direct lint test
+          time ./pants --spec-files="$RUNNER_TEMP/qualified.txt" lint test
       - name: Report test memory
         if: always()
         run: |
