@@ -2,5 +2,3 @@
 # Licensed under the Apache License, Version 2.0 (see LICENSE).
 
 shell_sources(sources=["*.sh", "pants_venv"])
-
-files(name="venv_bootstrap", sources=["pants_venv", "common.sh"])

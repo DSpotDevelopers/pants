@@ -18,12 +18,11 @@ function venv_dir() {
   # abiflags to differentiate free-threaded from GIL builds (`--version` prints "Python 3.14.3"
   # for both, but their extension ABIs are incompatible).
   # Fingerprinting uname and python output avoids shebang length limits and any odd chars.
-  # Include REPO_ROOT and the real interpreter installation so that different checkouts and
-  # Python installs (including two builds of the same version) don't clobber each other.
+  # Include REPO_ROOT so that different checkouts or worktrees don't clobber each other.
   venv_fingerprint=$( (
     echo "${platform}"
     echo "${REPO_ROOT}"
-    "${PY}" -c 'import os, sys; print(os.path.realpath(sys.executable), sys.implementation.name, ".".join(map(str, sys.version_info[:3])), sys.abiflags)'
+    ${PY} -c 'import sys; print(sys.implementation.name, ".".join(map(str, sys.version_info[:3])), sys.abiflags)'
   ) | fingerprint_data)
 
   # NB: We house these outside the working copy to avoid needing to gitignore them, but also to

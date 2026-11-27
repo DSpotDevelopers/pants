@@ -43,7 +43,7 @@ python_distribution(
     # We need to explicitly control the wheel tagging, rather than following whatever the current
     # Python interpreter is tagged for (especially on macOS, where a 'universal' interpreter build
     # can lead to single-platform wheels being tagged as `universal2` wheels, incorrectly)
-    env_vars=["_PYTHON_HOST_PLATFORM", "CC", "LDSHARED"],
+    env_vars=["_PYTHON_HOST_PLATFORM"],
 )
 
 pex_binary(
@@ -75,9 +75,6 @@ pex_binary(
 # use `entry_points` to link to the actual native code, so clang/gcc do not need to build any
 # native code. This is just a dummy file.
 resources(name="resources", sources=["py.typed", "dummy.c"])
-
-# The wheel-input contract test reads this handwritten distribution definition as runtime data.
-files(name="wheel-definition", sources=["BUILD"])
 
 __dependencies_rules__(
     (
