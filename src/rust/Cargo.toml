@@ -220,6 +220,7 @@ smallvec = "1"
 strum = "0.26"
 strum_macros = "0.26"
 sysinfo = "0.20.5"
+tar = { version = "0.4.46", default-features = false }
 tempfile = "3.27.0"
 terminal_size = "0.1.15"
 time = "0.3.47"
