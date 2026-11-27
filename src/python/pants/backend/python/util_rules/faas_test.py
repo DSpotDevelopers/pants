@@ -2,6 +2,7 @@
 # Licensed under the Apache License, Version 2.0 (see LICENSE).
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 from textwrap import dedent
 from unittest.mock import Mock
@@ -42,6 +43,7 @@ from pants.core.target_types import FileTarget
 from pants.engine.fs import EMPTY_DIGEST
 from pants.engine.internals.scheduler import ExecutionError
 from pants.engine.target import InferredDependencies, InvalidFieldException, Target
+from pants.option.bootstrap_options import LocalStoreOptions
 from pants.testutil.rule_runner import QueryRule, RuleRunner, engine_error, run_rule_with_mocks
 from pants.util.strutil import softwrap
 
@@ -51,8 +53,7 @@ class MockFaaS(Target):
     core_fields = (PythonFaaSDependencies, PythonFaaSHandlerField, PythonResolveField)
 
 
-@pytest.fixture
-def rule_runner() -> RuleRunner:
+def _new_rule_runner() -> RuleRunner:
     return RuleRunner(
         rules=[
             *target_type_rules(),
@@ -68,6 +69,27 @@ def rule_runner() -> RuleRunner:
             PythonSourcesGeneratorTarget,
         ],
     )
+
+
+@pytest.fixture
+def rule_runner() -> RuleRunner:
+    return _new_rule_runner()
+
+
+def test_rule_runner_does_not_require_the_shared_store(tmp_path: Path, monkeypatch) -> None:
+    # An unrelated job's unavailable cache must not affect this fixture's source/digest tests.
+    ambient = tmp_path / "ambient-store"
+    ambient.write_text("not a usable cache directory")
+    from_options = LocalStoreOptions.from_options
+    monkeypatch.setattr(
+        LocalStoreOptions,
+        "from_options",
+        classmethod(lambda cls, options: replace(from_options(options), store_dir=str(ambient))),
+    )
+    runner = _new_rule_runner()
+    snapshot = runner.make_snapshot({"input.txt": "isolated"})
+    assert snapshot.files == ("input.txt",)
+    assert ambient.read_text() == "not a usable cache directory"
 
 
 @pytest.mark.parametrize("invalid_handler", ("path.to.lambda", "lambda.py"))
