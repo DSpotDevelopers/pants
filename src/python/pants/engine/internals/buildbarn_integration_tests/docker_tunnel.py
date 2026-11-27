@@ -5,12 +5,20 @@
 
 from __future__ import annotations
 
+import os
+import signal
 import socket
 import socketserver
 import subprocess
 import threading
 from collections.abc import Sequence
-from contextlib import AbstractContextManager
+from contextlib import AbstractContextManager, suppress
+
+
+def _kill(child: subprocess.Popen[bytes]) -> None:
+    with suppress(ProcessLookupError):
+        os.killpg(child.pid, signal.SIGKILL)
+    child.wait()
 
 
 class ExecTunnel(AbstractContextManager["ExecTunnel"]):
@@ -26,7 +34,12 @@ class ExecTunnel(AbstractContextManager["ExecTunnel"]):
                 with owner._lock:
                     if owner._closing:
                         return
-                    child = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+                    child = subprocess.Popen(
+                        command,
+                        stdin=subprocess.PIPE,
+                        stdout=subprocess.PIPE,
+                        start_new_session=True,
+                    )
                     owner.children.add(child)
                     owner._clients.add(self.request)
                 assert child.stdin is not None and child.stdout is not None
@@ -56,8 +69,7 @@ class ExecTunnel(AbstractContextManager["ExecTunnel"]):
                         self.request.shutdown(socket.SHUT_RDWR)
                     except OSError:
                         pass
-                    child.kill()
-                    child.wait()
+                    _kill(child)
                     writer.join()
                     child.stdout.close()
                     with owner._lock:
@@ -85,7 +97,6 @@ class ExecTunnel(AbstractContextManager["ExecTunnel"]):
             except OSError:
                 pass
         for child in children:
-            child.kill()
-            child.wait()
+            _kill(child)
         # Wait for handlers' resource cleanup, including the upload threads.
         self._server.server_close()

@@ -10,11 +10,12 @@ from pants.engine.internals.buildbarn_integration_tests.docker_tunnel import Exe
 
 def test_exec_tunnel_forwards_independent_duplex_streams_and_closes() -> None:
     # Stand in for docker exec with a real streaming child, rather than mocking socket I/O.
+    echo = "import os,signal;\nwhile b := os.read(0, 65536): os.write(1, b)\nsignal.pause()"
     command = [
         sys.executable,
         "-u",
         "-c",
-        "import os;\nwhile b := os.read(0, 65536): os.write(1, b)",
+        f"import subprocess,sys; subprocess.run([sys.executable,'-u','-c',{echo!r}])",
     ]
     with ExecTunnel(command) as tunnel:
 
