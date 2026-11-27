@@ -20,6 +20,9 @@ python_tests(
     name="py_tests",
     dependencies=["//conftest.py:test_utils"],
     overrides={
+        "dspot_qualification_runner_test.py": {
+            "dependencies": ["//.github/workflows/dspot-pants.yaml"],
+        },
         "generate_json_schema_test.py": {
             "dependencies": [
                 "build-support/bin/json_schema_testdata:json_schema_samples",
