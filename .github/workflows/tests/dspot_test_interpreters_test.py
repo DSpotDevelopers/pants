@@ -16,5 +16,7 @@ def test_tests_job_installs_python_313_for_pytest_runner_cells() -> None:
         if step.get("uses", "").startswith("actions/setup-python@")
     ]
     assert len(setup) == 1
-    versions = {".".join(value.split(".")[:2]) for value in setup[0]["with"]["python-version"].split()}
+    versions = {
+        ".".join(value.split(".")[:2]) for value in setup[0]["with"]["python-version"].split()
+    }
     assert "3.13" in versions

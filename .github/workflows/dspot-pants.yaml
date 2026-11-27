@@ -206,6 +206,7 @@ jobs:
             3.8.18
             3.10.22
             3.11.18
+            3.13
             3.14
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
