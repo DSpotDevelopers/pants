@@ -1180,24 +1180,22 @@ async def run_tests(
         for batch, environment_name, preflight in zip(test_batches, environment_names, preflights)
         if preflight.refusal is None
     ]
-    results = [
-        *refused,
-        *await concurrently(
-            run_test_batch(
-                **implicitly(
-                    {
-                        batch: TestRequest.Batch,
-                        environment_name: EnvironmentName,
-                    }
-                )
+    executed_results = await concurrently(
+        run_test_batch(
+            **implicitly(
+                {
+                    batch: TestRequest.Batch,
+                    environment_name: EnvironmentName,
+                }
             )
-            for batch, environment_name in to_test
-        ),
-    ]
+        )
+        for batch, environment_name in to_test
+    )
+    results = [*refused, *executed_results]
 
     if test_subsystem.shard_timings_output:
         timings: dict[str, float] = {}
-        for result in results:
+        for result in executed_results:
             elapsed = result.result_metadata.total_elapsed_ms if result.result_metadata else None
             if elapsed is None or not result.addresses:
                 continue

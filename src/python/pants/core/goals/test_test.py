@@ -414,12 +414,16 @@ def test_duration_report_uses_process_time(rule_runner: PythonRuleRunner, tmp_pa
     assert json.loads(output.read_text()) == {"//:example": 0.999}
 
 
-def test_refused_preflight_does_not_replace_batch_timings(rule_runner: PythonRuleRunner, tmp_path: Path) -> None:
+def test_refused_preflight_does_not_replace_batch_timings(
+    rule_runner: PythonRuleRunner, tmp_path: Path
+) -> None:
     import json
 
     target = make_target()
     output = tmp_path / "durations.json"
-    refusal = make_test_result((target.address,), 3, result_metadata=make_process_result_metadata("ran"))
+    refusal = make_test_result(
+        (target.address,), 3, result_metadata=make_process_result_metadata("ran")
+    )
     code, _ = run_test_rule(
         rule_runner,
         request_type=SuccessfulRequest,
