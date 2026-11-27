@@ -27,7 +27,15 @@ TestProjectAndPackageManager = tuple[str, str]
 RuleRunnerWithProjectAndPackageManager = tuple[RuleRunner, str, str]
 
 
-def _create_rule_runner(package_manager: str) -> RuleRunner:
+def _nodejs_options(package_manager: str, verified_nodejs_bin_dir: str) -> list[str]:
+    return [
+        f"--nodejs-package-manager={package_manager}",
+        "--nodejs-known-versions=[]",
+        f"--nodejs-search-path={[verified_nodejs_bin_dir]}",
+    ]
+
+
+def _create_rule_runner(package_manager: str, verified_nodejs_bin_dir: str) -> RuleRunner:
     rule_runner = RuleRunner(
         rules=[
             *nodejs_tool.rules(),
@@ -50,7 +58,7 @@ def _create_rule_runner(package_manager: str) -> RuleRunner:
         objects=dict(package_json.build_file_aliases().objects),
     )
     rule_runner.set_options(
-        [f"--nodejs-package-manager={package_manager}"],
+        _nodejs_options(package_manager, verified_nodejs_bin_dir),
         env_inherit={"PATH"},
     )
     return rule_runner

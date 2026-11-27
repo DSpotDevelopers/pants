@@ -11,19 +11,19 @@ from pathlib import Path
 import pytest
 
 from pants.backend.javascript.subsystems.nodejs import NodeJSBinaries
-
 from pants.backend.typescript.goals.check import TypeScriptCheckFieldSet, TypeScriptCheckRequest
 from pants.backend.typescript.goals.check_test_utils import (
     RuleRunnerWithProjectAndPackageManager,
     _create_rule_runner,
     _load_project_test_files,
+    _nodejs_options,
 )
 from pants.build_graph.address import Address
 from pants.core.goals.check import CheckResults
 
 
 def test_project_runner_uses_the_suite_verified_node(verified_nodejs_bin_dir: str) -> None:
-    runner = _create_rule_runner("pnpm")
+    runner = _create_rule_runner("pnpm", verified_nodejs_bin_dir)
     binaries = runner.request(NodeJSBinaries, [])
     assert binaries.binary_dir == verified_nodejs_bin_dir
     assert binaries.digest is None, "project runner would materialize another complete distribution"
@@ -62,9 +62,11 @@ def _override_math_ts_with_TS2322_error() -> str:
 @pytest.mark.parametrize("project_root", ["", "subfolder-project"])
 @pytest.mark.parametrize("type_error", [False, True])
 def test_typescript_check_with_root_and_subfolder_projects(
-    project_root: str, type_error: bool
+    project_root: str,
+    type_error: bool,
+    verified_nodejs_bin_dir: str,
 ) -> None:
-    rule_runner = _create_rule_runner("pnpm")
+    rule_runner = _create_rule_runner("pnpm", verified_nodejs_bin_dir)
     prefix = f"{project_root}/" if project_root else ""
     files = {
         prefix + path.removeprefix("basic_project/"): content
@@ -348,6 +350,7 @@ def test_file_targets_available_during_typescript_compilation(
 
 def test_typescript_incremental_compilation_cache(
     basic_rule_runner: RuleRunnerWithProjectAndPackageManager,
+    verified_nodejs_bin_dir: str,
 ) -> None:
     """Test TypeScript incremental compilation cache using comprehensive 4-run pattern.
 
@@ -372,7 +375,7 @@ def test_typescript_incremental_compilation_cache(
     # RUN 1: First compilation - should create cache and perform full build
     rule_runner.set_options(
         [
-            f"--nodejs-package-manager={package_manager}",
+            *_nodejs_options(package_manager, verified_nodejs_bin_dir),
             "--typescript-extra-build-args=['--verbose']",
         ],
         env_inherit={"PATH"},
@@ -415,7 +418,7 @@ def test_typescript_incremental_compilation_cache(
     # This keeps the same build root so cache can be reused
     rule_runner.set_options(
         [
-            f"--nodejs-package-manager={package_manager}",
+            *_nodejs_options(package_manager, verified_nodejs_bin_dir),
             "--typescript-extra-build-args=['-v']",  # Use -v instead of --verbose
         ],
         env_inherit={"PATH"},
@@ -446,7 +449,7 @@ def test_typescript_incremental_compilation_cache(
 
     rule_runner.set_options(
         [
-            f"--nodejs-package-manager={package_manager}",
+            *_nodejs_options(package_manager, verified_nodejs_bin_dir),
             "--typescript-extra-build-args=['--verbose']",  # Back to --verbose
         ],
         env_inherit={"PATH"},
@@ -467,7 +470,7 @@ def test_typescript_incremental_compilation_cache(
     # RUN 4: After modification - should use cache again
     rule_runner.set_options(
         [
-            f"--nodejs-package-manager={package_manager}",
+            *_nodejs_options(package_manager, verified_nodejs_bin_dir),
             "--typescript-extra-build-args=['-v']",  # Back to -v
         ],
         env_inherit={"PATH"},
@@ -488,7 +491,11 @@ def test_typescript_incremental_compilation_cache(
 
 @pytest.mark.parametrize("generated", ["file", "codegen", "package"])
 @pytest.mark.parametrize("type_error", [False, True])
-def test_typescript_config_data_dependencies(generated: str, type_error: bool) -> None:
+def test_typescript_config_data_dependencies(
+    generated: str,
+    type_error: bool,
+    verified_nodejs_bin_dir: str,
+) -> None:
     from pants.backend.javascript import package_json
     from pants.backend.javascript.subsystems import nodejs_tool
     from pants.backend.shell.goals import package as shell_package
@@ -520,7 +527,7 @@ def test_typescript_config_data_dependencies(generated: str, type_error: bool) -
             ShellCommandPackageTarget,
         ],
     )
-    runner.set_options(["--nodejs-package-manager=pnpm"], env_inherit={"PATH"})
+    runner.set_options(_nodejs_options("pnpm", verified_nodejs_bin_dir), env_inherit={"PATH"})
     declaration = "declare const sdkValue: number;"
     producer = (
         "shell_command(name='sdk', command=\"mkdir -p vendor/sdk && "

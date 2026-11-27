@@ -16,6 +16,7 @@ from pants.backend.typescript.goals.check_test_utils import (
     RuleRunnerWithProjectAndPackageManager,
     _create_rule_runner,
     _load_project_test_files,
+    _nodejs_options,
 )
 from pants.build_graph.address import Address
 from pants.core.goals.check import CheckResults
@@ -25,8 +26,10 @@ from pants.engine.intrinsics import create_digest, merge_digests
 from pants.engine.process import FallibleProcessResult, Process
 
 
-def test_discovery_does_not_snapshot_cyclic_installed_workspace_links() -> None:
-    runner = _create_rule_runner("pnpm")
+def test_discovery_does_not_snapshot_cyclic_installed_workspace_links(
+    verified_nodejs_bin_dir: str,
+) -> None:
+    runner = _create_rule_runner("pnpm", verified_nodejs_bin_dir)
     runner.write_files(_load_project_test_files("basic_project"))
     target = runner.get_target(
         Address("basic_project/src", target_name="ts_sources", relative_file_path="index.ts")
@@ -84,8 +87,10 @@ def test_discovery_does_not_snapshot_cyclic_installed_workspace_links() -> None:
     assert result.exit_code == 0, result.stdout + result.stderr
 
 
-def test_compiler_digest_excludes_unrelated_declared_assets() -> None:
-    runner = _create_rule_runner("pnpm")
+def test_compiler_digest_excludes_unrelated_declared_assets(
+    verified_nodejs_bin_dir: str,
+) -> None:
+    runner = _create_rule_runner("pnpm", verified_nodejs_bin_dir)
     files = _load_project_test_files("basic_project")
     unrelated = {
         "basic_project/misc/unrelated.whl": "x" * (1024 * 1024),
@@ -129,8 +134,10 @@ JS_TYPE_ERROR_FILE_NUMBER_TO_STRING = (
 )
 
 
-def test_compiler_receives_declared_package_export_data() -> None:
-    runner = _create_rule_runner("pnpm")
+def test_compiler_receives_declared_package_export_data(
+    verified_nodejs_bin_dir: str,
+) -> None:
+    runner = _create_rule_runner("pnpm", verified_nodejs_bin_dir)
     files = _load_project_test_files("basic_project")
     package = json.loads(files["basic_project/package.json"])
     package["exports"] = {"./schema": "./schema.json"}
@@ -164,14 +171,19 @@ def test_compiler_receives_declared_package_export_data() -> None:
 
 
 def test_setting_typescript_version_emits_warning(
-    basic_rule_runner: RuleRunnerWithProjectAndPackageManager, caplog
+    basic_rule_runner: RuleRunnerWithProjectAndPackageManager,
+    caplog,
+    verified_nodejs_bin_dir: str,
 ) -> None:
     rule_runner, test_project, package_manager = basic_rule_runner
     test_files = _load_project_test_files(test_project)
     rule_runner.write_files(test_files)
 
     rule_runner.set_options(
-        [f"--nodejs-package-manager={package_manager}", "--typescript-version=typescript@5.0.0"],
+        [
+            *_nodejs_options(package_manager, verified_nodejs_bin_dir),
+            "--typescript-version=typescript@5.0.0",
+        ],
         env_inherit={"PATH"},
     )
 
@@ -244,8 +256,11 @@ def test_check_javascript_disabled_via_tsconfig(
 @pytest.mark.parametrize(
     "module_kind", ["javascript", "declaration", "commonjs_declaration", "ambient"]
 )
-def test_compiler_receives_imported_inputs(module_kind: str) -> None:
-    rule_runner = _create_rule_runner("pnpm")
+def test_compiler_receives_imported_inputs(
+    module_kind: str,
+    verified_nodejs_bin_dir: str,
+) -> None:
+    rule_runner = _create_rule_runner("pnpm", verified_nodejs_bin_dir)
     files = _load_project_test_files("basic_project")
     config = json.loads(files["basic_project/tsconfig.json"])
     config["compilerOptions"].update(allowJs=True, checkJs=False, resolveJsonModule=True)
@@ -294,8 +309,10 @@ def test_compiler_receives_imported_inputs(module_kind: str) -> None:
     assert result.exit_code == 0, result.stdout + result.stderr
 
 
-def test_javascript_only_project_does_not_require_a_typescript_compiler() -> None:
-    rule_runner = _create_rule_runner("pnpm")
+def test_javascript_only_project_does_not_require_a_typescript_compiler(
+    verified_nodejs_bin_dir: str,
+) -> None:
+    rule_runner = _create_rule_runner("pnpm", verified_nodejs_bin_dir)
     rule_runner.write_files(
         {
             "BUILD": "package_json(name='workspace')\njavascript_sources(name='js')\n",

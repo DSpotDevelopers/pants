@@ -19,9 +19,11 @@ from pants.core.goals.check import CheckResults
 @pytest.mark.parametrize("config_style", ["directory", "named", "arbitrary"])
 @pytest.mark.parametrize("selection", ["clean", "broken", "dependency", "both"])
 def test_check_selects_tsconfig_program_without_unrelated_sibling(
-    config_style: str, selection: str
+    config_style: str,
+    selection: str,
+    verified_nodejs_bin_dir: str,
 ) -> None:
-    rule_runner = _create_rule_runner("pnpm")
+    rule_runner = _create_rule_runner("pnpm", verified_nodejs_bin_dir)
     named_config = config_style != "directory"
     files = _load_project_test_files("basic_project")
     compiler_options = json.loads(files["basic_project/tsconfig.json"])["compilerOptions"]

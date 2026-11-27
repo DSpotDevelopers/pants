@@ -139,3 +139,10 @@ retaining modes and symlinks without overwriting hard-linked CAS data. It refuse
 special files and traversal outside staging. The executor and retained replay copy declared inputs/outputs through owned sandbox volumes; recovery/shutdown deletes those volumes and preserves named caches.
 The lifecycle primitive allocates disposable sandbox volumes and accepts their retained identity after a container disappears.
 Remove these patches when a pinned upstream executor supports a separate daemon through volume/copy I/O.
+
+## TypeScript test tool ownership
+
+The TypeScript goal suites download and verify their pinned Node distribution once per test process.
+Each project keeps its own rule runner, sources and assertions, and searches only that owned distribution.
+This avoids staging another full Node archive for every project runner. Remove this test-only patch when
+the pinned upstream fixtures share verified tool ownership without repeating distribution materialization.
