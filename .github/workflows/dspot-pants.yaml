@@ -192,7 +192,6 @@ jobs:
     timeout-minutes: 30
     env:
       PANTS_PANTSD: 'false'
-      PANTS_PROCESS_EXECUTION_LOCAL_PARALLELISM: '1'
       HONEYCOMB_API_KEY: --DISABLED--
       PANTS_OPENTELEMETRY_ENABLED: 'False'
     steps:
@@ -246,6 +245,14 @@ jobs:
           path: src/python/pants
       - name: Restore executable permissions
         run: chmod +x src/python/pants/bin/native_client src/python/pants/bin/sandboxer src/python/pants/bin/pants_lock
+      # Use the granted slot CPUs, bounded by cgroup quota, affinity and the fleet share.
+      # A fixed one-process queue made short suites wait behind the entire qualification.
+      - name: Pants' processes, one per CPU the slot is granted
+        run: |
+          set -euo pipefail
+          cpus="$("$PY" build-support/bin/dspot_slot_cpus.py)"
+          echo "PANTS_PROCESS_EXECUTION_LOCAL_PARALLELISM=${cpus}" >> "$GITHUB_ENV"
+          echo "Pants' process parallelism: ${cpus}"
       # The patch and its direct dependents, within the qualified scope: the backends the company
       # enables (build-support/bin/dspot_qualification_scope.toml).
       - name: Run only the patch and its direct dependent suites, within the qualified scope

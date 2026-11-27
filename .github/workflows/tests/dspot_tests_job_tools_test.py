@@ -49,7 +49,9 @@ def test_tests_job_uses_the_granted_cpu_budget_before_selection() -> None:
     assert "PANTS_PROCESS_EXECUTION_LOCAL_PARALLELISM" not in job["env"]
     steps = job["steps"]
     budget = next(i for i, s in enumerate(steps) if "dspot_slot_cpus.py" in s.get("run", ""))
-    selection = next(i for i, s in enumerate(steps) if "dspot_qualified_selection.py" in s.get("run", ""))
+    selection = next(
+        i for i, s in enumerate(steps) if "dspot_qualified_selection.py" in s.get("run", "")
+    )
     assert budget < selection
-    assert 'PANTS_PROCESS_EXECUTION_LOCAL_PARALLELISM=${cpus}' in steps[budget]["run"]
+    assert "PANTS_PROCESS_EXECUTION_LOCAL_PARALLELISM=${cpus}" in steps[budget]["run"]
     assert '>> "$GITHUB_ENV"' in steps[budget]["run"]
