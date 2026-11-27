@@ -13,7 +13,7 @@ from pants.engine.addresses import Address
 from pants.engine.internals.graph import _TargetParametrizations, _TargetParametrizationsRequest
 from pants.testutil.rule_runner import QueryRule, RuleRunner
 from pants.util.pip_requirement import PipRequirement
-from pants.version import VERSION
+from pants.version import PANTS_SEMVER
 
 
 def test_target_generator() -> None:
@@ -53,10 +53,10 @@ def test_target_generator() -> None:
     assert pants_req[PythonRequirementModulesField].value == ("pants",)
     assert testutil_req[PythonRequirementModulesField].value == ("pants.testutil",)
     assert pants_req[PythonRequirementsField].value == (
-        PipRequirement.parse(f"pantsbuild.pants=={VERSION}"),
+        PipRequirement.parse(f"pantsbuild.pants=={PANTS_SEMVER.public}"),
     )
     assert testutil_req[PythonRequirementsField].value == (
-        PipRequirement.parse(f"pantsbuild.pants.testutil=={VERSION}"),
+        PipRequirement.parse(f"pantsbuild.pants.testutil=={PANTS_SEMVER.public}"),
     )
     assert pants_req[PythonRequirementFindLinksField].value == (
         "https://wheels.pantsbuild.org/simple",
