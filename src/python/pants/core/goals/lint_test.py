@@ -411,6 +411,28 @@ def test_invalid_target_noops(rule_runner: RuleRunner) -> None:
     assert stderr == ""
 
 
+@pytest.mark.parametrize(
+    "request_types,expected_exit_code",
+    [
+        ([FailingRequest, ConditionallySucceedsRequest], 127),
+        ([ConditionallySucceedsRequest, FailingRequest], 1),
+    ],
+)
+def test_summary_follows_request_order(
+    rule_runner: RuleRunner,
+    request_types: list[type[MockLintTargetsRequest]],
+    expected_exit_code: int,
+) -> None:
+    exit_code, stderr = run_lint_rule(
+        rule_runner,
+        lint_request_types=request_types,
+        targets=[make_target(Address("", target_name="bad"))],
+    )
+    assert exit_code == expected_exit_code
+    assert "Conditionally Succeeds Linter failed." in stderr
+    assert "Failing Linter failed." in stderr
+
+
 def test_summary(rule_runner: RuleRunner) -> None:
     """Test that we render the summary correctly.
 
