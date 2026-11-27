@@ -264,6 +264,10 @@ def run_test_rule(
     valid_targets: bool = True,
     show_rerun_command: bool = False,
     run_id: RunId = RunId(999),
+    shard: str = "",
+    shard_timings: dict[str, float] | None = None,
+    shard_timings_output: str | None = None,
+    preflight_refusal: TestResult | None = None,
 ) -> tuple[int, str]:
     test_subsystem = create_goal_subsystem(
         TestSubsystem,
@@ -276,7 +280,9 @@ def run_test_rule(
         xml_dir=None,
         output=output,
         extra_env_vars=[],
-        shard="",
+        shard=shard,
+        shard_timings=shard_timings or {},
+        shard_timings_output=shard_timings_output,
         batch_size=1,
         show_rerun_command=show_rerun_command,
     )
@@ -350,9 +356,9 @@ def run_test_rule(
                 "pants.core.goals.test.test_batch_to_debug_request": mock_debug_request,
                 "pants.core.goals.test.test_batch_to_debug_adapter_request": mock_debug_request,
                 "pants.core.goals.test.run_test_batch": mock_test_partition,
-                # no [test].preflight in these runs: every batch is admitted
+                # Ordinary goal cells admit every batch; refusal cells retain their normal result.
                 "pants.core.goals.test.run_test_preflight": lambda _request,
-                _subsystem: TestPreflightResult(None),
+                _subsystem: TestPreflightResult(preflight_refusal),
                 "pants.core.goals.test.create_coverage_report": mock_coverage_report_generation,
                 "pants.engine.internals.specs_rules.find_valid_field_sets_for_target_roots": mock_find_valid_field_sets,
                 "pants.engine.intrinsics.merge_digests": lambda _: EMPTY_DIGEST,
@@ -376,6 +382,53 @@ def test_invalid_target_noops(rule_runner: PythonRuleRunner) -> None:
     )
     assert exit_code == 0
     assert stderr.strip() == ""
+
+
+def test_duration_shards_run_every_native_batch_once(rule_runner: PythonRuleRunner) -> None:
+    addresses = [Address("", target_name=name) for name in ("slow-a", "slow-b", "fast-a", "fast-b")]
+    timings = dict(zip((a.spec for a in addresses), (60, 60, 10, 10)))
+    for shard, expected in (("0/2", (0, 2)), ("1/2", (1, 3))):
+        code, stderr = run_test_rule(
+            rule_runner,
+            request_type=SuccessfulRequest,
+            targets=[make_target(address) for address in addresses],
+            shard=shard,
+            shard_timings=timings,
+        )
+        assert code == 0
+        for index, address in enumerate(addresses):
+            assert (f"{address.spec} succeeded" in stderr) == (index in expected)
+
+
+def test_duration_report_uses_process_time(rule_runner: PythonRuleRunner, tmp_path: Path) -> None:
+    import json
+
+    output = tmp_path / "durations.json"
+    code, _ = run_test_rule(
+        rule_runner,
+        request_type=SuccessfulRequest,
+        targets=[make_target(Address("", target_name="example"))],
+        shard_timings_output=str(output),
+    )
+    assert code == 0
+    assert json.loads(output.read_text()) == {"//:example": 0.999}
+
+
+def test_refused_preflight_does_not_replace_batch_timings(rule_runner: PythonRuleRunner, tmp_path: Path) -> None:
+    import json
+
+    target = make_target()
+    output = tmp_path / "durations.json"
+    refusal = make_test_result((target.address,), 3, result_metadata=make_process_result_metadata("ran"))
+    code, _ = run_test_rule(
+        rule_runner,
+        request_type=SuccessfulRequest,
+        targets=[target],
+        preflight_refusal=refusal,
+        shard_timings_output=str(output),
+    )
+    assert code == 3
+    assert json.loads(output.read_text()) == {}
 
 
 def test_skipped_target_noops(rule_runner: PythonRuleRunner) -> None:

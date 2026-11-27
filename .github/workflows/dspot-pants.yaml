@@ -135,6 +135,13 @@ jobs:
           if ! git diff --quiet "$BASE...HEAD" -- src/rust/dep_inference; then
             ./cargo test --locked -p dep_inference javascript::tests
           fi
+      - name: Test changed Docker archive transfer in Rust
+        env:
+          BASE: ${{ needs.source.outputs.base }}
+        run: |
+          if ! git diff --quiet "$BASE...HEAD" -- src/rust/process_execution/docker; then
+            ./cargo test --locked --release -p docker volume_archive::
+          fi
       - name: Retain the matching native engine
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
@@ -166,9 +173,8 @@ jobs:
 
   tests:
     needs: [source, build]
-    # The build's runner class: the focused suites run up to 6 minutes each (a JavaScript integration suite 202 s of
-    # its 240 s limit), and a 1-vCPU medium slot shared with other jobs ran past them (run 45668070356).
-    # Core integration suites also exercise Docker; only the guarded socket runners provide it.
+    # The native Docker and Buildbarn cells need the admitted socket and Compose runner image.
+    # Generic dspot slots may lack Compose (run 46059177480 on 06f9).
     runs-on: [self-hosted, linux, x64, dspot, heavy-ok, docker-socket]
     timeout-minutes: 30
     env:
@@ -210,6 +216,7 @@ jobs:
             3.10.22
             3.11.18
             3.13
+            3.14
       - name: Bootstrap Python for clean Pants subprocesses
         run: |
           bootstrap_python="$(bash build-support/bin/dspot_bootstrap_python.sh)"
@@ -226,6 +233,11 @@ jobs:
         env:
           BASE: ${{ needs.source.outputs.base }}
           EXPECTED_HEAD: ${{ needs.source.outputs.head }}
+          # DSpot's Pants build does not use Docker environments; these tests need a Docker daemon our runners do not
+          # give PR jobs (the docker-socket guard refuses Pants' sandbox bind mounts). Each is named by its pytest node
+          # id, so the rest of its file still runs.
+          PANTS_PYTEST_ARGS: >-
+            ["--deselect=src/python/pants/backend/python/providers/python_build_standalone/rules_test.py::test_docker_python_path_uses_named_caches_in_container"]
         run: |
           test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
           "$PY" build-support/bin/dspot_qualified_selection.py "$BASE" > "$RUNNER_TEMP/qualified.txt"

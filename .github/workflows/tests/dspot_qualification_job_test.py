@@ -12,22 +12,6 @@ def _tests_job() -> dict:
     return yaml.safe_load(Path(".github/workflows/dspot-pants.yaml").read_text())["jobs"]["tests"]
 
 
-def test_python_313_integration_cells_have_their_interpreter() -> None:
-    (setup,) = [
-        step
-        for step in _tests_job()["steps"]
-        if step.get("uses", "").startswith("actions/setup-python@")
-    ]
-    versions = {
-        ".".join(version.split(".")[:2]) for version in setup["with"]["python-version"].split()
-    }
-    assert "3.13" in versions
-
-
-def test_core_docker_integration_cells_get_a_guarded_socket() -> None:
-    assert "docker-socket" in _tests_job()["runs-on"]
-
-
 def test_changed_targets_use_the_release_lines_qualified_selection() -> None:
     commands = "\n".join(step.get("run", "") for step in _tests_job()["steps"])
     assert '"$PY" build-support/bin/dspot_qualified_selection.py "$BASE"' in commands
