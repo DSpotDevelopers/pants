@@ -185,12 +185,6 @@ jobs:
 
   tests:
     needs: [source, build]
-    # A cold two-CPU slot completed only234 suites before the30m cutoff (45946720012).
-    # Native Pants shards partition the entire selection; one red shard must not cancel others.
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: [0, 1, 2, 3]
     # The build's runner class: the focused suites run up to 6 minutes each (a JavaScript integration suite 202 s of
     # its 240 s limit), and a 1-vCPU medium slot shared with other jobs ran past them (runs 45668070356, 45711444202).
     # Selected Docker backend suites need the guarded socket. heavy-ok alone does not provide it.
@@ -198,12 +192,7 @@ jobs:
     timeout-minutes: 30
     env:
       PANTS_PANTSD: 'false'
-      PANTS_TEST_SHARD: '${{ matrix.shard }}/4'
-      # Restore only into this job's checkout, never over another slot's live LMDB.
-      # The tests' RuleRunners and nested Pants processes must use the same warmed store.
-      XDG_CACHE_HOME: ${{ github.workspace }}/.pants.d/qualification-cache
-      PANTS_TEST_EXTRA_ENV_VARS: '+["XDG_CACHE_HOME", "HERMETIC_ENV"]'
-      HERMETIC_ENV: XDG_CACHE_HOME
+      PANTS_PROCESS_EXECUTION_LOCAL_PARALLELISM: '1'
       HONEYCOMB_API_KEY: --DISABLED--
       PANTS_OPENTELEMETRY_ENABLED: 'False'
     steps:
@@ -229,10 +218,15 @@ jobs:
           done
           fetch --unshallow
           git merge-base "$BASE" "$head" > /dev/null
-      # The interpreters the qualified suites run under, as upstream's own test jobs install them
-      # (pants_release/generate_github_workflows.py, test_jobs): the runner image carries none of them,
-      # and a suite whose interpreter is missing skips, which this fork counts as a failure. Upstream's
-      # JDK, Go and thrift serve only folders outside the qualified scope (the JVM, Go, codegen).
+      # The tools and interpreters the qualified suites run under, as upstream's own test jobs install
+      # them (pants_release/generate_github_workflows.py, test_jobs): the runner image carries none of
+      # them, and a suite whose tool is missing skips, which this fork counts as a failure. Go and
+      # thrift serve only backends outside the qualified scope. The JDK serves pants/jvm and pants/bsp.
+      - name: Install AdoptJDK
+        uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
+        with:
+          distribution: adopt
+          java-version: '11'
       # Upstream's Linux list without 3.7, which setup-python doesn't publish for the runners' Ubuntu
       # 24.04, and 3.14, the standalone interpreter installed immediately afterwards for Pants itself.
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
@@ -252,44 +246,17 @@ jobs:
           path: src/python/pants
       - name: Restore executable permissions
         run: chmod +x src/python/pants/bin/native_client src/python/pants/bin/sandboxer src/python/pants/bin/pants_lock
-      # Named caches keep package downloads; the CAS/process store also keeps extracted Node,
-      # prepared Corepack tools and installed fixture dependencies. Native fingerprints decide reuse.
-      - name: Restore the qualification's Pants caches
-        id: qualification-cache
-        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
-        with:
-          # The cache action's version includes this absolute path: PEX venvs cannot move roots.
-          path: ${{ env.XDG_CACHE_HOME }}/pants
-          key: qualified-pants-v1-${{ runner.os }}-${{ runner.arch }}-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.shard }}
-          restore-keys: qualified-pants-v1-${{ runner.os }}-${{ runner.arch }}-
-      # Pants runs one process per CPU it sees, and a runner's container sees the host's CPUs, not the
-      # slot's quota: 32 test processes on a 4-vCPU slot ran past Pants' per-test limit.
-      - name: Pants' processes, one per CPU the slot is granted
-        run: |
-          set -euo pipefail
-          cpus="$("$PY" build-support/bin/dspot_slot_cpus.py)"
-          echo "PANTS_PROCESS_EXECUTION_LOCAL_PARALLELISM=${cpus}" >> "$GITHUB_ENV"
-          echo "Pants' process parallelism: ${cpus}"
-      # The patch and its direct dependents, within the qualified scope: the folders Pants loads when it
-      # runs with the backends the company enables (build-support/bin/dspot_qualification_scope.toml).
-      # The Docker environments' backend, remote execution's Buildbarn tests and the JVM fall outside it.
+      # The patch and its direct dependents, within the qualified scope: the backends the company
+      # enables (build-support/bin/dspot_qualification_scope.toml).
       - name: Run only the patch and its direct dependent suites, within the qualified scope
         env:
           BASE: ${{ needs.source.outputs.base }}
           EXPECTED_HEAD: ${{ needs.source.outputs.head }}
         run: |
           test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
-          "$PY" build-support/bin/dspot_qualified_selection.py "$BASE" "$RUNNER_TEMP/outside-the-contract.txt" > "$RUNNER_TEMP/qualified.txt"
+          "$PY" build-support/bin/dspot_qualified_selection.py "$BASE" > "$RUNNER_TEMP/qualified.txt"
           TIMEFORMAT='tests elapsed=%R user=%U system=%S seconds'
-          time ./pants --spec-files="$RUNNER_TEMP/qualified.txt" --pytest-args="@$RUNNER_TEMP/outside-the-contract.txt" lint test
-      # Publish useful inputs even when a test fails normally. A cancelled job may still have
-      # children using LMDB, so it must not take a snapshot. Never replace a test's exit status.
-      - name: Save the qualification's Pants caches
-        if: ${{ !cancelled() && steps.qualification-cache.outcome == 'success' }}
-        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
-        with:
-          path: ${{ env.XDG_CACHE_HOME }}/pants
-          key: ${{ steps.qualification-cache.outputs.cache-primary-key }}
+          time ./pants --spec-files="$RUNNER_TEMP/qualified.txt" lint test
       - name: Report test memory
         if: always()
         run: |

@@ -1,8 +1,7 @@
 # What DSpot's own Pants build is qualified for: the Pants features dspot-company-data uses, as its
 # pants.toml enables them (company main b311266e33, 2026-11-26). Qualification runs the change's
-# selection within the folders Pants loads when it runs with these backends, and every suite outside
-# src/python/pants/; a feature none of them loads (Docker environments, remote execution, the JVM)
-# is one the company doesn't use, and its suites run nowhere for us.
+# selection within these backends, and every suite outside src/python/pants/backend/; a backend
+# not listed here is a feature the company doesn't use, and its suites run nowhere for us.
 #
 # The owner, 3 Nov 2026 ~20:10Z: "disable 100% all tests (all, no exception) that aren't related to
 # [what we use] ... what's done stays as it is".
