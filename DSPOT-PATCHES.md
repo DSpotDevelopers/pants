@@ -136,6 +136,6 @@ Remove this patch when the pinned upstream stack supports a separate Docker daem
 
 The Docker executor's archive helper stages each returned sandbox before replacing local inputs,
 retaining modes and symlinks without overwriting hard-linked CAS data. It refuses foreign roots,
-special files and traversal outside staging. Its caller replaces host binds in the next patch.
+special files and traversal outside staging. The executor and retained replay copy declared inputs/outputs through owned sandbox volumes; recovery/shutdown deletes those volumes and preserves named caches.
 The lifecycle primitive allocates disposable sandbox volumes and accepts their retained identity after a container disappears.
 Remove these patches when a pinned upstream executor supports a separate daemon through volume/copy I/O.
