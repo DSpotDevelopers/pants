@@ -16,11 +16,12 @@ def test_extension_build_paths_follow_the_published_interpreter(tmp_path: Path) 
     config.parent.mkdir(parents=True)
     config.write_text(
         "build_time_vars = {'prefix': '/install', 'INCLUDEPY': '/install/include/python3.14', "
-        "'CFLAGS': '-I/install/include -O3', 'LIBDIR': '/install/lib', 'SIZEOF_INT': 4}"
+        "'CFLAGS': '-I/install/include -O3', 'LIBDIR': '/install/lib', 'SIZEOF_INT': 4, "
+        "'INSTALL': '/usr/bin/install -c', 'OTHER': '/installation', 'FLAGS': '-I/install -L/install/lib'}"
     )
     makefile = config.parent / "config-3.14-x86_64-linux-gnu/Makefile"
     makefile.parent.mkdir()
-    makefile.write_text("prefix=/install\nLIBDIR=/install/lib\n")
+    makefile.write_text("prefix=/install\nLIBDIR=/install/lib\nINSTALL=/usr/bin/install -c\n")
     destination = tmp_path / "published"
     relocate(staging, destination)
     staging.rename(destination)
@@ -29,8 +30,11 @@ def test_extension_build_paths_follow_the_published_interpreter(tmp_path: Path) 
     assert values["CFLAGS"] == f"-I{destination}/include -O3"
     assert values["LIBDIR"] == str(destination / "lib")
     assert values["SIZEOF_INT"] == 4
+    assert values["INSTALL"] == "/usr/bin/install -c"
+    assert values["OTHER"] == "/installation"
+    assert values["FLAGS"] == f"-I{destination} -L{destination}/lib"
     assert (destination / makefile.relative_to(staging)).read_text() == (
-        f"prefix={destination}\nLIBDIR={destination}/lib\n"
+        f"prefix={destination}\nLIBDIR={destination}/lib\nINSTALL=/usr/bin/install -c\n"
     )
     assert str(staging) not in repr(values)
 
