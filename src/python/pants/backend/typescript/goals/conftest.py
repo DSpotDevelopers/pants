@@ -4,14 +4,32 @@
 from __future__ import annotations
 
 from typing import cast
+from pathlib import Path
 
 import pytest
+
+from pants.backend.javascript.subsystems import nodejs_tool
+from pants.backend.javascript.subsystems.nodejs import NodeJSBinaries
+from pants.engine.rules import QueryRule
+from pants.testutil.rule_runner import RuleRunner
 
 from pants.backend.typescript.goals.check_test_utils import (
     RuleRunnerWithProjectAndPackageManager,
     TestProjectAndPackageManager,
     _create_rule_runner,
 )
+
+
+@pytest.fixture(scope="session")
+def verified_nodejs_bin_dir() -> str:
+    """Own one verified Node distribution; project runners retain their separate graphs and inputs."""
+    bootstrap = RuleRunner(rules=[*nodejs_tool.rules(), QueryRule(NodeJSBinaries, [])])
+    binaries = bootstrap.request(NodeJSBinaries, [])
+    assert binaries.digest is not None
+    prefix = "{chroot}/__node/"
+    assert binaries.binary_dir.startswith(prefix)
+    bootstrap.write_digest(binaries.digest, path_prefix="verified-node")
+    return str(Path(bootstrap.build_root, "verified-node", binaries.binary_dir.removeprefix(prefix)))
 
 
 @pytest.fixture(

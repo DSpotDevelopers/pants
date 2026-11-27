@@ -10,6 +10,8 @@ from pathlib import Path
 
 import pytest
 
+from pants.backend.javascript.subsystems.nodejs import NodeJSBinaries
+
 from pants.backend.typescript.goals.check import TypeScriptCheckFieldSet, TypeScriptCheckRequest
 from pants.backend.typescript.goals.check_test_utils import (
     RuleRunnerWithProjectAndPackageManager,
@@ -18,6 +20,13 @@ from pants.backend.typescript.goals.check_test_utils import (
 )
 from pants.build_graph.address import Address
 from pants.core.goals.check import CheckResults
+
+
+def test_project_runner_uses_the_suite_verified_node(verified_nodejs_bin_dir: str) -> None:
+    runner = _create_rule_runner("pnpm")
+    binaries = runner.request(NodeJSBinaries, [])
+    assert binaries.binary_dir == verified_nodejs_bin_dir
+    assert binaries.digest is None, "project runner would materialize another complete distribution"
 
 
 def _parse_typescript_build_status(stdout: str) -> str:

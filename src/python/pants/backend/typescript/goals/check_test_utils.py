@@ -7,6 +7,7 @@ from pathlib import Path
 
 from pants.backend.javascript import package_json
 from pants.backend.javascript.subsystems import nodejs_tool
+from pants.backend.javascript.subsystems.nodejs import NodeJSBinaries
 from pants.backend.javascript.target_types import JSSourcesGeneratorTarget
 from pants.backend.tsx.target_types import TSXSourcesGeneratorTarget, TSXTestsGeneratorTarget
 from pants.backend.typescript.goals import check
@@ -34,6 +35,7 @@ def _create_rule_runner(package_manager: str) -> RuleRunner:
             *package.rules(),
             QueryRule(CheckResults, [TypeScriptCheckRequest]),
             QueryRule(DigestEntries, [Digest]),
+            QueryRule(NodeJSBinaries, []),
         ],
         target_types=[
             package_json.PackageJsonTarget,
