@@ -257,9 +257,9 @@ jobs:
           EXPECTED_HEAD: ${{ needs.source.outputs.head }}
         run: |
           test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
-          "$PY" build-support/bin/dspot_qualified_selection.py "$BASE" > "$RUNNER_TEMP/qualified.txt"
+          "$PY" build-support/bin/dspot_qualified_selection.py "$BASE" "$RUNNER_TEMP/outside-the-contract.txt" > "$RUNNER_TEMP/qualified.txt"
           TIMEFORMAT='tests elapsed=%R user=%U system=%S seconds'
-          time ./pants --spec-files="$RUNNER_TEMP/qualified.txt" lint test
+          time ./pants --spec-files="$RUNNER_TEMP/qualified.txt" --pytest-args="@$RUNNER_TEMP/outside-the-contract.txt" lint test
       - name: Report test memory
         if: always()
         run: |
