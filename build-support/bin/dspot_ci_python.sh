@@ -13,7 +13,8 @@ readonly SHA256="493c477b4a88bb1ea2f6c6f57fa0e88ffbe55d9e7b1405c4699f2d41c04eb15
 readonly URL="https://github.com/astral-sh/python-build-standalone/releases/download/${RELEASE}/cpython-${VERSION}+${RELEASE}-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz"
 root="${RUNNER_TOOL_CACHE:?}/dspot-python"
 # A new immutable generation: never rewrite metadata used by another running slot.
-install="${root}/${VERSION}-${SHA256}-sysconfig-v1"
+metadata_sha256="$(sha256sum "$(dirname "${BASH_SOURCE[0]}")/dspot_relocate_python.py")"
+install="${root}/${VERSION}-${SHA256}-sysconfig-${metadata_sha256%% *}"
 mkdir -p "${root}"
 
 # Concurrent slots may share the tool cache. Publish only a completely extracted installation.
