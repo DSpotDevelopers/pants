@@ -272,9 +272,9 @@ jobs:
           EXPECTED_HEAD: ${{ needs.source.outputs.head }}
         run: |
           test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
-          "$PY" build-support/bin/dspot_qualified_selection.py "$BASE" > "$RUNNER_TEMP/qualified.txt"
+          "$PY" build-support/bin/dspot_qualified_selection.py "$BASE" "$RUNNER_TEMP/outside-the-contract.txt" > "$RUNNER_TEMP/qualified.txt"
           TIMEFORMAT='tests elapsed=%R user=%U system=%S seconds'
-          time ./pants --spec-files="$RUNNER_TEMP/qualified.txt" lint test
+          time ./pants --spec-files="$RUNNER_TEMP/qualified.txt" --pytest-args="@$RUNNER_TEMP/outside-the-contract.txt" lint test
       # Publish useful inputs even when a test fails normally. A cancelled job may still have
       # children using LMDB, so it must not take a snapshot. Never replace a test's exit status.
       - name: Save the qualification's Pants caches
