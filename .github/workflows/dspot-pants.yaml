@@ -185,6 +185,12 @@ jobs:
 
   tests:
     needs: [source, build]
+    # A cold two-CPU slot completed only234 suites before the30m cutoff (45946720012).
+    # Native Pants shards partition the entire selection; one red shard must not cancel others.
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
     # The build's runner class: the focused suites run up to 6 minutes each (a JavaScript integration suite 202 s of
     # its 240 s limit), and a 1-vCPU medium slot shared with other jobs ran past them (runs 45668070356, 45711444202).
     # Selected Docker backend suites need the guarded socket. heavy-ok alone does not provide it.
@@ -192,6 +198,7 @@ jobs:
     timeout-minutes: 30
     env:
       PANTS_PANTSD: 'false'
+      PANTS_TEST_SHARD: '${{ matrix.shard }}/4'
       # Restore only into this job's checkout, never over another slot's live LMDB.
       # The tests' RuleRunners and nested Pants processes must use the same warmed store.
       XDG_CACHE_HOME: ${{ github.workspace }}/.pants.d/qualification-cache
@@ -253,7 +260,7 @@ jobs:
         with:
           # The cache action's version includes this absolute path: PEX venvs cannot move roots.
           path: ${{ env.XDG_CACHE_HOME }}/pants
-          key: qualified-pants-v1-${{ runner.os }}-${{ runner.arch }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: qualified-pants-v1-${{ runner.os }}-${{ runner.arch }}-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.shard }}
           restore-keys: qualified-pants-v1-${{ runner.os }}-${{ runner.arch }}-
       # Pants runs one process per CPU it sees, and a runner's container sees the host's CPUs, not the
       # slot's quota: 32 test processes on a 4-vCPU slot ran past Pants' per-test limit.
