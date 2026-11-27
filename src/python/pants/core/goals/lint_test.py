@@ -339,7 +339,7 @@ def run_lint_rule(
     skip_fixers: bool = False,
 ) -> tuple[int, str]:
     union_membership = UnionMembership.from_rules(
-        {
+        [
             *[UnionRule(AbstractLintRequest, t) for t in lint_request_types],
             *[UnionRule(AbstractLintRequest.Batch, rt.Batch) for rt in lint_request_types],
             *[
@@ -352,7 +352,7 @@ def run_lint_rule(
                 for rt in lint_request_types
                 if issubclass(rt, LintFilesRequest)
             ],
-        }
+        ]
     )
     lint_subsystem = create_goal_subsystem(
         LintSubsystem,
