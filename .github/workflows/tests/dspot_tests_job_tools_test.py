@@ -73,7 +73,7 @@ def test_tests_job_restores_and_saves_its_pants_cache() -> None:
     )
     execute = next(i for i, s in enumerate(steps) if "./pants" in s.get("run", ""))
     assert restore < execute < save
-    assert steps[restore]["with"]["path"] == ".pants.d/qualification-cache/pants"
+    assert steps[restore]["with"]["path"] == "${{ env.XDG_CACHE_HOME }}/pants"
     assert steps[save]["with"]["path"] == steps[restore]["with"]["path"]
     assert (
         steps[save]["with"]["key"] == "${{ steps.qualification-cache.outputs.cache-primary-key }}"

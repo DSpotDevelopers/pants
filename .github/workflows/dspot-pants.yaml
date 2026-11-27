@@ -192,6 +192,11 @@ jobs:
     timeout-minutes: 30
     env:
       PANTS_PANTSD: 'false'
+      # Restore only into this job's checkout, never over another slot's live LMDB.
+      # The tests' RuleRunners and nested Pants processes must use the same warmed store.
+      XDG_CACHE_HOME: ${{ github.workspace }}/.pants.d/qualification-cache
+      PANTS_TEST_EXTRA_ENV_VARS: '+["XDG_CACHE_HOME", "HERMETIC_ENV"]'
+      HERMETIC_ENV: XDG_CACHE_HOME
       HONEYCOMB_API_KEY: --DISABLED--
       PANTS_OPENTELEMETRY_ENABLED: 'False'
     steps:
@@ -240,6 +245,16 @@ jobs:
           path: src/python/pants
       - name: Restore executable permissions
         run: chmod +x src/python/pants/bin/native_client src/python/pants/bin/sandboxer src/python/pants/bin/pants_lock
+      # Named caches keep package downloads; the CAS/process store also keeps extracted Node,
+      # prepared Corepack tools and installed fixture dependencies. Native fingerprints decide reuse.
+      - name: Restore the qualification's Pants caches
+        id: qualification-cache
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          # The cache action's version includes this absolute path: PEX venvs cannot move roots.
+          path: ${{ env.XDG_CACHE_HOME }}/pants
+          key: qualified-pants-v1-${{ runner.os }}-${{ runner.arch }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: qualified-pants-v1-${{ runner.os }}-${{ runner.arch }}-
       # Pants runs one process per CPU it sees, and a runner's container sees the host's CPUs, not the
       # slot's quota: 32 test processes on a 4-vCPU slot ran past Pants' per-test limit.
       - name: Pants' processes, one per CPU the slot is granted
@@ -260,6 +275,14 @@ jobs:
           "$PY" build-support/bin/dspot_qualified_selection.py "$BASE" "$RUNNER_TEMP/outside-the-contract.txt" > "$RUNNER_TEMP/qualified.txt"
           TIMEFORMAT='tests elapsed=%R user=%U system=%S seconds'
           time ./pants --spec-files="$RUNNER_TEMP/qualified.txt" --pytest-args="@$RUNNER_TEMP/outside-the-contract.txt" lint test
+      # Publish useful inputs even when a test fails normally. A cancelled job may still have
+      # children using LMDB, so it must not take a snapshot. Never replace a test's exit status.
+      - name: Save the qualification's Pants caches
+        if: ${{ !cancelled() && steps.qualification-cache.outcome == 'success' }}
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: ${{ env.XDG_CACHE_HOME }}/pants
+          key: ${{ steps.qualification-cache.outputs.cache-primary-key }}
       - name: Report test memory
         if: always()
         run: |
