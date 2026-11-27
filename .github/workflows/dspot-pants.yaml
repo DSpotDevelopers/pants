@@ -164,7 +164,11 @@ jobs:
 
   tests:
     needs: [source, build]
-    runs-on: [self-hosted, linux, x64, slot-medium]
+    # The build's runner class: a focused suite runs up to its own limit (the JavaScript integration suite, 35 cases
+    # under one 240 s limit, ran past it on a 1-vCPU medium slot in run 45947108101 and took 37 s on a build-class
+    # slot in run 45991691606). GitHub runs this pull_request_target workflow from the default branch, so this is
+    # the copy that decides where the job runs.
+    runs-on: [self-hosted, linux, x64, dspot]
     timeout-minutes: 30
     env:
       PY: python3.14

@@ -25,8 +25,8 @@ those jobs. A skipped test job or successful packaging alone cannot report succe
 The `DSpot Pants` status links to the run that built and tested its exact head.
 
 Build and test steps run directly in the existing runner image. The build uses
-`[self-hosted, linux, x64, dspot]`; focused tests use `slot-medium`; API bookkeeping
-uses `slot-cpus-1`. These jobs do not require Docker and have no job-level
+`[self-hosted, linux, x64, dspot]`, and so do the focused tests (their suites need the build's CPU); API
+bookkeeping uses `slot-cpus-1`. These jobs do not require Docker and have no job-level
 `container` configuration. GitHub's built-in job container creates host binds
 and performs a network prune that the fleet guard intentionally refuses.
 The guard, runner images and fleet capacity are unchanged.
