@@ -30,21 +30,21 @@ Reviewer feedback upstream already gave on similar changes, applied where it fit
 | 2: non-module imports | `upstream-prep/js-infer-non-js-files` 6e759ecba | js-infer-non-js-files.md | F1 (read), F4 (note moved 2.34 -> 2.35), F7 | ready for the owner |
 | 3: bundler query (on 2) | `upstream-prep/js-infer-bundler-query` 272b80fb5 | js-infer-bundler-query.md | F1 (read), F4, F7 | ready, after 2 |
 | 4: TS `.js` specifier (on 3) | `upstream-prep/js-infer-ts-js-specifier` c6af81137 | js-infer-ts-js-specifier.md | F1 (read), F4, F7 | ready, after 3 |
-| 13: stylesheet links (on 4) | `upstream-prep/stylesheet-links` 681b2ea46 | stylesheet-links.md | F2, F4, F7 | ready, after 4 |
+| 13: stylesheet links (on 4) | `upstream-prep/stylesheet-links` 681b2ea46 | stylesheet-links.md | F1 (read), F2, F4, F7 | ready, after 4 |
 | 11: --changed-dependents generators | `upstream-prep/changed-dependents-no-generators` 7492dc516 | changed-dependents-no-generators.md | F1 (read), F4 (links #15313), F7 | ready |
-| 14: ruff on file/resource .py | `upstream-prep/ruff-check-python-assets` d483333f0 | ruff-check-python-assets.md | F4, F7 | ready; docs page maybe asked |
-| 17: Sandboxer socket per instance | `upstream-prep/sandboxer-socket-per-sandboxer` 8c21fe964 | sandboxer-socket-per-sandboxer.md | F4, F6, F7 | ready; Rust not compiled here |
-| 12: PBS in a workspace | `upstream-prep/pbs-workspace-interpreter` 7391d0e3d | pbs-workspace-interpreter.md | F4, F7, clean commit message | ready |
-| 9: JS/TS test environments | `upstream-prep/js-test-environments` 48fd91021 | js-test-environments.md | F4, F5, F7 | ready |
-| 10: workspace Node install per session | `upstream-prep/workspace-node-install-per-session` c54eb2001 | workspace-node-install-per-session.md | F4, F7 | ready, after 9 |
-| shard by measured time | `upstream-prep/test-shards-by-duration` 74e78d1d5 | test-shards-by-duration.md | F3, F4, F7 | ready; a feature: issue first |
-| #43 backend test fixtures | `upstream-prep/backend-test-fixture-assumptions` 05b1aec53 | backend-test-fixture-assumptions.md | F7 | ready (tests) |
-| FaaS test fixture | `upstream-prep/faas-test-ambient-store` 3d88d9f29 | faas-test-ambient-store.md | F7 | ready (tests) |
-| JS test fixture reuse | `upstream-prep/js-test-fixture-tool-reuse` 3bc73a73b | js-test-fixture-tool-reuse.md | F7 | ready (tests) |
-| Buildbarn tests in containers | `upstream-prep/buildbarn-relay-containerized-jobs` 9d695d354 | buildbarn-relay-containerized-jobs.md | F7 | ready (test infra) |
-| #48 lint summary order | `upstream-prep/lint-summary-test-order` 279cdb705 | lint-summary-test-order.md | F7 | ready (test) |
-| Docker archive staging | `upstream-prep/docker-archive-staging` ded282e6f | docker-archive-staging.md | F7 | open with #53/#54 |
-| 5-8: TypeScript check (root project, selected configs, config data) | not prepared | - | (F3 is tobni's own ask on #22461: check what is selected) | port needed: upstream's check.py changed since 2.33 (029bd904d hydration with codegen; #23505 `find_sh`); the semantic merge needs check_test on upstream main, and upstream will want 3 PRs |
+| 14: ruff on file/resource .py | `upstream-prep/ruff-check-python-assets` d483333f0 | ruff-check-python-assets.md | F1 (read), F4, F7 | ready; docs page maybe asked |
+| 17: Sandboxer socket per instance | `upstream-prep/sandboxer-socket-per-sandboxer` 8c21fe964 | sandboxer-socket-per-sandboxer.md | F1 (read), F4, F6, F7 | ready; Rust not compiled here |
+| 12: PBS in a workspace | `upstream-prep/pbs-workspace-interpreter` 7391d0e3d | pbs-workspace-interpreter.md | F1 (read), F4, F7, clean commit message | ready |
+| 9: JS/TS test environments | `upstream-prep/js-test-environments` 48fd91021 | js-test-environments.md | F1 (read), F4, F5, F7 | ready |
+| 10: workspace Node install per session | `upstream-prep/workspace-node-install-per-session` c54eb2001 | workspace-node-install-per-session.md | F1 (read), F4, F7 | ready, after 9 |
+| shard by measured time | `upstream-prep/test-shards-by-duration` 74e78d1d5 | test-shards-by-duration.md | F1 (read), F3, F4, F7 | ready; a feature: issue first |
+| #43 backend test fixtures | `upstream-prep/backend-test-fixture-assumptions` 05b1aec53 | backend-test-fixture-assumptions.md | F1 (read), F7 | ready (tests) |
+| FaaS test fixture | `upstream-prep/faas-test-ambient-store` 3d88d9f29 | faas-test-ambient-store.md | F1 (read), F7 | ready (tests) |
+| JS test fixture reuse | `upstream-prep/js-test-fixture-tool-reuse` 3bc73a73b | js-test-fixture-tool-reuse.md | F1 (read), F7 | ready (tests) |
+| Buildbarn tests in containers | `upstream-prep/buildbarn-relay-containerized-jobs` de104aeae | buildbarn-relay-containerized-jobs.md | F1 (comment reworded), F7 | ready (test infra) |
+| #48 lint summary order | `upstream-prep/lint-summary-test-order` 279cdb705 | lint-summary-test-order.md | F1 (read), F7 | ready (test) |
+| Docker archive staging | `upstream-prep/docker-archive-staging` ded282e6f | docker-archive-staging.md | F1 (read), F7 | open with #53/#54 |
+| 5-8: TypeScript check (root project, selected configs, config data) | not prepared as branches (decision 27 Nov 18:43Z: after the deadline) | typescript-check-port.md (three drafts) | (F3 is tobni's own ask on #22461: check what is selected) | port needed: upstream's check.py changed since 2.33 (029bd904d hydration with codegen; #23505 `find_sh`); the semantic merge needs check_test on upstream main, and upstream will want 3 PRs |
 | #53/#54 Docker sandbox volumes | not prepared | - | - | conflicts with upstream's docker.rs; both still open and unreviewed on our fork |
 | 1 (#23754), 15 (#23720) | already upstream | - | - | none needed |
 | #42, #46, #47 | not upstreamable | - | - | our fork's own CI workflow |

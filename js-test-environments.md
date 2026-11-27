@@ -11,32 +11,13 @@
 - F4
 - F7
 - F5: package-manager paths (Corepack) stay with the package manager
-- F1: not yet read line by line for comment style; the owner's review, or ours before he opens it
+- F1: every added comment read (27 Nov 18:50Z); they say why
 
-## What the owner's description needs: the facts, from the branch's own commits
-(Upstream requires a human-written title and description: these are facts to write from, not text to paste. Some commit
-bodies mention our fork's context; the squash commit takes the owner's description instead.)
-
-### test(javascript): expose missing workspace test environments
-
-Control: JS, TypeScript and TSX test targets reject environment=workspace (three red cells).
-
-Add execution coverage for selected files, workspace reads and cross-session result invalidation.
-
-Retest the focused JS test rules and native workspace runner after wiring the environment fields.
-
-### fix(javascript): retain test environments and bootstrap sandbox paths
-
-JS test field sets discarded environment choice and forced prepared-runtime tests into a sandbox.
-Carry environment fields through JS, TypeScript and TSX targets and generators.
-Keep archive/Corepack paths inside their input sandbox and honor environment result-cache policy.
-Controls: three field reds; stale-result and missing-bootstrap-input mutations both fire.
-Retest: focused Pants JS/Node suites, workspace runner, archive extraction and Ruff.
-
-### fix(workspace tests): drop formatting churn; AST and lint retest
-
-
-### docs: release note
+## What the owner's description needs
+(Facts to write from: upstream requires a human-written title and description.)
+- **Problem:** JavaScript, TypeScript and TSX test targets drop the `environment` field, so a test cannot choose, for example, a workspace environment; archive extraction and Corepack paths can point outside the input sandbox.
+- **Change:** The environment field reaches the JS/TS/TSX test field sets and generators, results follow the environment's cache policy, and archive/Corepack paths stay inside their input sandbox.
+- **Tests:** Three red cases (each target type with `environment="workspace"`) and execution cases in `javascript/goals/test_integration_test.py` and `test_test.py`.
 
 ## Evidence
 - In our Pants build (dspot-company-data runs it daily); not run on upstream main here (no Rust toolchain on this host).

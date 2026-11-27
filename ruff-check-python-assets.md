@@ -10,33 +10,13 @@
 ## Feedback applied
 - F4: note names the new option and its default
 - F7
-- F1: not yet read line by line for comment style; the owner's review, or ours before he opens it
+- F1: every added comment read (27 Nov 18:50Z); they say why
 
-## What the owner's description needs: the facts, from the branch's own commits
-(Upstream requires a human-written title and description: these are facts to write from, not text to paste. Some commit
-bodies mention our fork's context; the squash commit takes the owner's description instead.)
-
-### test(ruff): `ruff check` lints the Python files of file and resource targets when asked
-
-Adds `[ruff].check_python_assets` (default off; declared only, no behaviour yet) and six
-goal-level cells through `pants lint --only=ruff-check`:
-- with the option, a bad `.py` in a `resources` or a `files` target fails the lint;
-- a `.txt` resource beside them is never given to Ruff;
-- without the option, nothing is linted;
-- `skip_ruff_check=True` and `skip_ruff=True` opt a `file`/`resource` target out.
-
-Red on this commit: 5 of the 6 fail. The enabled cells get exit 0 and Ruff never runs
-(stock Ruff lints only Python targets), and both skip fields are refused on `resources`.
-The default-off cell passes.
-
-
-### ruff: optionally lint the Python files of file and resource targets
-
-`[ruff].check_python_assets` (default off) adds a second lint request
-under the same `ruff-check` id for the `.py` files of `file` and
-`resource` targets, so `--only=ruff-check` runs both, with the same Ruff,
-config and report. `skip_ruff_check` and `skip_ruff` are accepted on
-those targets.
+## What the owner's description needs
+(Facts to write from: upstream requires a human-written title and description.)
+- **Problem:** `ruff check` lints only `python_source(s)`/`python_test(s)` targets, so the `.py` files a repository owns as `file`/`resource` (test fixtures, Python read as data) are never linted by Pants.
+- **Change:** New `[ruff].check_python_assets` (default off): a second lint request under the same `ruff-check` id for those files, with the same Ruff, config and report; `skip_ruff_check`/`skip_ruff` work on `file`/`resource` targets. A non-`.py` resource beside them is never given to Ruff.
+- **Tests:** Six cases in `ruff/rules_integration_test.py` (on, off, skip fields, `--only=ruff-check`, non-Python resources).
 
 ## Evidence
 - In our Pants build (dspot-company-data runs it daily); not run on upstream main here (no Rust toolchain on this host).

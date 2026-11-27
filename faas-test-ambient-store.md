@@ -10,16 +10,13 @@
 ## Feedback applied
 - F7
 - resolved beside upstream's new `create_subsystem` import
-- F1: not yet read line by line for comment style; the owner's review, or ours before he opens it
+- F1: every added comment read (27 Nov 18:50Z); they say why
 
-## What the owner's description needs: the facts, from the branch's own commits
-(Upstream requires a human-written title and description: these are facts to write from, not text to paste. Some commit
-bodies mention our fork's context; the squash commit takes the owner's description instead.)
-
-### test(python): exercise FaaS rules with an unavailable ambient store
-
-
-### fix(python): isolate the FaaS test fixture from the ambient store
+## What the owner's description needs
+(Facts to write from: upstream requires a human-written title and description.)
+- **Problem:** `faas_test.py`'s rule runner opens the ambient local store, so an unrelated, unavailable cache fails source/digest tests that need no store.
+- **Change:** The fixture uses its own local store options.
+- **Tests:** A case run with the ambient store unavailable.
 
 ## Evidence
 - In our Pants build (dspot-company-data runs it daily); not run on upstream main here (no Rust toolchain on this host).

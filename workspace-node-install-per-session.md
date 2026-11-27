@@ -10,35 +10,13 @@
 ## Feedback applied
 - F4
 - F7
-- F1: not yet read line by line for comment style; the owner's review, or ours before he opens it
+- F1: every added comment read (27 Nov 18:50Z); they say why
 
-## What the owner's description needs: the facts, from the branch's own commits
-(Upstream requires a human-written title and description: these are facts to write from, not text to paste. Some commit
-bodies mention our fork's context; the squash commit takes the owner's description instead.)
-
-### test(javascript): expose workspace tests running without their installed packages
-
-In a workspace environment a test reads its package's node_modules from the checkout,
-and the install that writes them is cached like a sandboxed one: a new checkout under
-a warm process cache skips it, and the test finds no node_modules ("Local package.json
-exists, but node_modules missing"). The cell installs a linked dependency, removes
-node_modules as a new checkout would have none, and runs the test in a new session.
-
-
-### fix(javascript): install workspace Node.js projects in every session
-
-Patch 9 gave workspace test results the environment's session cache policy, but not
-the install they read. In a workspace environment the install's result is the
-project's node_modules in the checkout, which processes read in place; reusing it
-from the process cache leaves a new checkout with none. There the project is now
-installed once per session, as one install of the whole project (its packages share
-one node_modules tree, and concurrent per-package installs into it race). Sandboxed
-environments keep the cached per-package install and its node_modules digest.
-Retest: the new workspace cell passes; test_integration_test.py and
-install_node_package_test.py pass in full; lint passes.
-
-
-### docs: release note
+## What the owner's description needs
+(Facts to write from: upstream requires a human-written title and description.)
+- **Problem:** In a workspace environment a Node.js project's install writes `node_modules` into the checkout, but the install is cached like a sandboxed one: a new checkout under a warm process cache skips it and the test fails with "Local package.json exists, but node_modules missing".
+- **Change:** In a workspace environment the project is installed once per session, as one install of the whole project (its packages share one `node_modules` tree; concurrent per-package installs race). Sandboxed environments keep the cached per-package install.
+- **Tests:** A workspace case that removes `node_modules` as a new checkout would and runs the test in a new session (`test_integration_test.py`).
 
 ## Evidence
 - In our Pants build (dspot-company-data runs it daily); not run on upstream main here (no Rust toolchain on this host).

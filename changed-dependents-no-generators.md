@@ -12,58 +12,11 @@
 - F1: the one comment says why a generator is no change
 - F7
 
-## What the owner's description needs: the facts, from the branch's own commits
-(Upstream requires a human-written title and description: these are facts to write from, not text to paste. Some commit
-bodies mention our fork's context; the squash commit takes the owner's description instead.)
-
-### fix(vcs): `--changed-dependents` never selects a dependent's target generator
-
-`find_changed_owners` drops the changed owners' target generators (#15313): a generator
-depends on every target it generates, so keeping it makes all its siblings look changed.
-A dependent's generator was kept: when one generated target of another generator is a
-transitive dependent, that generator was selected too, and `test` then ran every one of
-its siblings. In DSpot's company repository a one-file plugin change selected about 250
-real dependents and expanded to 1,477 test files (871 from one tests generator).
-
-The same rule now covers dependents: their generators leave the result, except one that
-is itself a direct owner (a deleted generated file), as before.
-
-Test: changed_integration_test test_change_dependent_in_another_generator; against
-2.33.2 it lists //:other, with this change it does not.
-
-(cherry picked from commit 97887f08ba144945f672025515cb4f94dc4ddfc8)
-
-### style(vcs): ruff format the dependents expression in changed.py
-
-What broke: the release PR's tests job (run 44893606494, job
-136817536914) failed only 'ruff format': the --changed-dependents fix
-(c19349874) left one expression past the line limit; every test passed.
-
-The expression is formatted as ruff formats it; no behaviour changes.
-
-Control: ruff format --check on changed.py and changed_integration_test.py
-passes (it failed on changed.py at 086790464f); ruff check passes.
-
-
-### test(vcs): a deleted file's dependent selects its own target, not its generator
-
-What broke: the release PR's tests job (run 44905956541, job 136857621634)
-failed test_deleted_file. It still expected src/python/top:tests, the
-generator of the dependent bar_test.py:tests, which the
---changed-dependents fix (c19349874) deliberately no longer selects: a
-dependent's generator leaves the result unless it is itself a direct owner
-(the deleted file's own generator, top:top, which stays). The fix's commit
-added test_change_dependent_in_another_generator but left this upstream
-expectation at the old behaviour.
-
-The expectation now lists what the rule selects; the job's own output shows
-exactly bar.py, bar_test.py:tests and top:top.
-
-Control: ruff format --check and ruff check pass. The integration test runs
-in this PR's tests job (it needs a 2.33.2 engine this host lacks).
-
-
-### docs: release note for --changed-dependents and target generators
+## What the owner's description needs
+(Facts to write from: upstream requires a human-written title and description.)
+- **Problem:** `--changed-dependents=transitive` selects a dependent's target generator: a generator depends on every target it generates, so it is a transitive dependent of each, and selecting it pulls in all its siblings (every file of a `python_tests` when one of them depends on the change). #15313 already drops the changed owners' generators.
+- **Change:** The dependents' generators are dropped the same way, except one that is itself a direct owner (a deleted file's).
+- **Tests:** `changed_integration_test.py::test_change_dependent_in_another_generator`, and the deleted-file case.
 
 ## Evidence
 - In our Pants build (dspot-company-data runs it daily); not run on upstream main here (no Rust toolchain on this host).

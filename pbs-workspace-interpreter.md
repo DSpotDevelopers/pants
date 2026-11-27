@@ -11,20 +11,13 @@
 - F4
 - F7
 - commit message rewritten without our fork's merge text
-- F1: not yet read line by line for comment style; the owner's review, or ours before he opens it
+- F1: every added comment read (27 Nov 18:50Z); they say why
 
-## What the owner's description needs: the facts, from the branch's own commits
-(Upstream requires a human-written title and description: these are facts to write from, not text to paste. Some commit
-bodies mention our fork's context; the squash commit takes the owner's description instead.)
-
-### python-build-standalone: install the interpreter from sandbox inputs in a workspace environment
-
-In a workspace environment the provider installed its interpreter from
-paths relative to the checkout, which the workspace does not hold, so a
-`python_tests` target with `environment="workspace"` had no interpreter.
-It now installs from the process sandbox's own inputs.
-
-### docs: release note
+## What the owner's description needs
+(Facts to write from: upstream requires a human-written title and description.)
+- **Problem:** In a workspace environment (`experimental_workspace_environment`) the python-build-standalone provider extracts its interpreter archive by a sandbox-relative path, which the build root does not hold, so a `python_tests` with `environment="workspace"` gets no interpreter.
+- **Change:** In a workspace environment the archive is downloaded and extracted in the local environment (the same bytes, the same host and platform), and installed from the process's inputs.
+- **Tests:** `python_build_standalone/rules_test.py`: a workspace-environment interpreter installs.
 
 ## Evidence
 - In our Pants build (dspot-company-data runs it daily); not run on upstream main here (no Rust toolchain on this host).

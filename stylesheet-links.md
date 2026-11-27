@@ -11,88 +11,13 @@
 - F4
 - F7
 - F2: the new rule is called by name
-- F1: not yet read line by line for comment style; the owner's review, or ours before he opens it
+- F1: every added comment read (27 Nov 18:50Z); they say why
 
-## What the owner's description needs: the facts, from the branch's own commits
-(Upstream requires a human-written title and description: these are facts to write from, not text to paste. Some commit
-bodies mention our fork's context; the squash commit takes the owner's description instead.)
-
-### test(javascript): a stylesheet's @import and @source of a package infer the package (red)
-
-A stylesheet links a workspace package with `@import "@flowsev/design"` or Tailwind's
-`@source "@flowsev/ui"`, and a library's own stylesheet its siblings with
-`@import "./tokens.css"`, but no rule reads a stylesheet, so a change to the package
-reaches none of the apps that style themselves with it.
-
-Six cells: a package `@import` (with a trailing modifier) and a Tailwind `@source`
-infer the package's node target; `@source not` does not; a relative `@import`
-infers the file's owner; a commented-out import and a URL infer nothing; an
-unresolvable import is reported by the unowned-dependency setting; a file that is
-not a stylesheet infers nothing. Red here: the request type does not exist.
-
-
-### feat(javascript): a stylesheet's @import and @source infer what they link; 2.33.2+dspot.12
-
-A stylesheet linked a workspace package (`@import "@flowsev/design"`, Tailwind's
-`@source "@flowsev/ui"`) or a sibling (`@import "./tokens.css"`), but no rule read
-it: a `file` or `resource` target infers nothing, and the JavaScript rules read
-JavaScript and TypeScript only. So `--changed-dependents` could not reach an app
-that styles itself with a changed design library.
-
-`infer_stylesheet_dependencies` reads the `.css` source of a `file` or `resource`
-target: a package specifier resolves through the same candidate map as a
-JavaScript import of that package; a relative path resolves to the file's owner;
-`@source not`, comments, URLs and absolute paths link nothing; an unresolved link
-follows `[nodejs-infer].unowned_dependency_behavior`. Recorded as patch 13, with
-its exit; the version label becomes 2.33.2+dspot.12.
-
-Control: the six red cells pass, with the module's 45 others (51) and
-package_json_test (14); ruff check and format are clean.
-
-
-### test(javascript): a stylesheet resolves packages from its own folder (red)
-
-Node resolves a stylesheet's imports from the file's folder, but the rule asked
-for the package owning the target's address. A stylesheet owned by a target
-declared above the app's package (dspot-company-data's cost-assistant
-`library-tree`) could not reach the app's own third-party packages, and its
-`@import "tailwindcss"` was reported unowned.
-
-Control: test_a_stylesheet_resolves_packages_from_its_own_folder_whoever_owns_it.
-Red here: nothing is inferred.
-
-
-### fix(javascript): a stylesheet's links resolve from its own folder
-
-The rule asked for the package owning the stylesheet's target address; Node
-resolves a stylesheet's imports from the file's folder, so it now asks for the
-package owning that folder.
-
-Control: the red cell passes, with the other 51 inference cells and
-package_json_test (66).
-
-
-### test(javascript): a Tailwind @source of a package folder infers the package (red)
-
-Tailwind's @source also takes a folder to scan (dspot-company-data's flowsev-atlas
-and docx-template-builder use `@source "../../../../packages/ui"`); no file
-owns a folder, so the link went unresolved.
-
-Control: test_a_tailwind_source_of_a_package_folder_infers_the_package. Red
-here: nothing is inferred.
-
-
-### fix(javascript): a stylesheet link to a package's folder infers the package
-
-A relative link no file owns is a folder; when that folder is a package's root
-(Tailwind's `@source "../ui"`), the link infers that package's node target, as
-`@source "@flowsev/ui"` does.
-
-Control: the red cell passes, with the 52 other inference cells and
-package_json_test (67).
-
-
-### docs: release note for stylesheet link inference
+## What the owner's description needs
+(Facts to write from: upstream requires a human-written title and description.)
+- **Problem:** JS dependency inference does not read stylesheets, so `@import "@scope/design"` or Tailwind's `@source "@scope/ui"` in a `.css` file infers nothing.
+- **Change:** A stylesheet's `@import`/`@import url(...)` and Tailwind's `@source` links infer what they name: a package's node target, a file's owner, a package whose root folder a relative link names. Links resolve from the stylesheet's folder; `@source not` links nothing. It reads the `.css` sources of `file`/`resource` targets.
+- **Tests:** Eight cases in `dependency_inference/rules_test.py`, among them resolution from the file's own folder and a Tailwind folder link.
 
 ## Evidence
 - In our Pants build (dspot-company-data runs it daily); not run on upstream main here (no Rust toolchain on this host).

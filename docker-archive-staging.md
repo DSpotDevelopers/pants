@@ -9,13 +9,13 @@
 
 ## Feedback applied
 - F7
-- F1: not yet read line by line for comment style; the owner's review, or ours before he opens it
+- F1: every added comment read (27 Nov 18:50Z); they say why
 
-## What the owner's description needs: the facts, from the branch's own commits
-(Upstream requires a human-written title and description: these are facts to write from, not text to paste. Some commit
-bodies mention our fork's context; the squash commit takes the owner's description instead.)
-
-### fix(docker): stage sandbox archive transfers without changing CAS links
+## What the owner's description needs
+(Facts to write from: upstream requires a human-written title and description.)
+- **Problem:** (Groundwork) a Docker sandbox is to be transferred through Docker's archive API, without interpreting its path on the daemon host, and without changing CAS hardlinked inputs.
+- **Change:** Adds `process_execution/docker/src/volume_archive.rs` (archive staging that unlinks original inputs before replacing them and never lets deleted inputs survive) and the `tar` crate. Used by the Docker sandbox-volume change, not yet prepared.
+- **Tests:** Unit tests in `volume_archive.rs`.
 
 ## Evidence
 - In our Pants build (dspot-company-data runs it daily); not run on upstream main here (no Rust toolchain on this host).

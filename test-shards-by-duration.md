@@ -11,23 +11,13 @@
 - F4: note names both new options
 - F7
 - F3: assignment is deterministic for the same history on every shard
-- F1: not yet read line by line for comment style; the owner's review, or ours before he opens it
+- F1: every added comment read (27 Nov 18:50Z); they say why
 
-## What the owner's description needs: the facts, from the branch's own commits
-(Upstream requires a human-written title and description: these are facts to write from, not text to paste. Some commit
-bodies mention our fork's context; the squash commit takes the owner's description instead.)
-
-### test(test): reproduce duration-blind native sharding
-
-The whole-scope run loses 283 results when one address-hash shard reaches its 120-minute cutoff. Prove that measured durations must choose native batches, retain every batch once, and report execution time for the next observation. The native goal control fails on the base because it executes all four batches instead of the requested duration-balanced half.
-
-### feat(test): balance native shards by measured process time
-
-Keep the graph and backend batches as the population, then assign whole batches longest-time-first using the same historical durations on every shard. New tests remain included with a conservative estimate. Record actual process seconds for the next observation rather than workunit queueing time. The existing address hash remains the unconfigured behavior.
-
-Validation: the native duration-shard regression fails on the preceding commit; normal source Pants lint and both focused suites pass on this tree, as does tailor --check. Real CLI shards consume the timing JSON and produce disjoint execution-time reports.
-
-### docs: release note
+## What the owner's description needs
+(Facts to write from: upstream requires a human-written title and description.)
+- **Problem:** `--shard=k/N` assigns targets by address hash, so one shard can draw the most expensive tests and run far longer than the others (a 120-minute cut-off lost 283 results in one shard of ours).
+- **Change:** New `[test].shard_timings` (historical seconds by address, `@file.json`): complete test batches are assigned longest-time-first to the least-loaded shard, deterministically for the same history; new addresses are estimated at the largest recorded time; an empty dictionary keeps hashing. New `[test].shard_timings_output` writes the run's measured seconds.
+- **Tests:** `core/util_rules/sharding_test.py` (assignment, determinism, input order) and `core/goals/test_test.py`.
 
 ## Evidence
 - In our Pants build (dspot-company-data runs it daily); not run on upstream main here (no Rust toolchain on this host).

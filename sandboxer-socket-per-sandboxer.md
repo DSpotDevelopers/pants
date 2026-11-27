@@ -11,29 +11,13 @@
 - F4: note in 2.35.x.md, worded as a fix
 - F7
 - F6: the Rust change keeps its logic outside macro bodies
-- F1: not yet read line by line for comment style; the owner's review, or ours before he opens it
+- F1: every added comment read (27 Nov 18:50Z); they say why
 
-## What the owner's description needs: the facts, from the branch's own commits
-(Upstream requires a human-written title and description: these are facts to write from, not text to paste. Some commit
-bodies mention our fork's context; the squash commit takes the owner's description instead.)
-
-### test(sandboxer): two Sandboxers of one process get their own sockets (red)
-
-pantsd builds a new scheduler, and so a new Sandboxer, when its options change, while the old
-one's server still runs. With patch 15's per-process name both use sandboxer-<pid>.sock.
-
-Red: cargo test -p sandboxer --lib test_each_sandboxer_of_one_process_has_its_own_socket fails,
-left == right == .../sandboxer-<pid>.sock.
-
-
-### sandboxer: each Sandboxer gets its own socket, not one per process
-
-A process can hold two Sandboxers at once: pantsd builds a new scheduler,
-and so a new Sandboxer, when its options change, while the old Sandboxer's
-server still runs until it is dropped. With one socket path per process
-(`sandboxer-<pid>.sock`), the new client could connect to the old server and
-lose it mid-request. Each Sandboxer now names its socket by its process and
-its own number (`sandboxer-<pid>-<n>.sock`).
+## What the owner's description needs
+(Facts to write from: upstream requires a human-written title and description.)
+- **Problem:** A process can hold two Sandboxers at once: pantsd builds a new scheduler, and so a new Sandboxer, when its options change, while the old one's server still runs. #23720 named the socket per process (`sandboxer-<pid>.sock`), so the two shared it and the new client could reach the old server and lose it mid-request: "materialize_directory() request to sandboxer process failed: transport error".
+- **Change:** Each Sandboxer names its socket by its process and a per-process counter, `sandboxer-<pid>-<n>.sock`.
+- **Tests:** `test_each_sandboxer_of_one_process_has_its_own_socket` in `sandboxer/src/tests.rs`: two Sandboxers of one process get different socket paths.
 
 ## Evidence
 - In our Pants build (dspot-company-data runs it daily); not run on upstream main here (no Rust toolchain on this host).
