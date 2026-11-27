@@ -87,3 +87,17 @@ def test_tests_job_restores_and_saves_its_pants_cache() -> None:
     # Keep work from a normally failed test pass, but do not snapshot a cancelled process.
     assert "!cancelled()" in steps[save]["if"]
     assert "success()" not in steps[save]["if"]
+
+
+def test_tests_job_uses_the_granted_cpu_budget_before_selection() -> None:
+    workflow = yaml.safe_load(Path(".github/workflows/dspot-pants.yaml").read_text())
+    job = workflow["jobs"]["tests"]
+    assert "PANTS_PROCESS_EXECUTION_LOCAL_PARALLELISM" not in job["env"]
+    steps = job["steps"]
+    budget = next(i for i, s in enumerate(steps) if "dspot_slot_cpus.py" in s.get("run", ""))
+    selection = next(
+        i for i, s in enumerate(steps) if "dspot_qualified_selection.py" in s.get("run", "")
+    )
+    assert budget < selection
+    assert "PANTS_PROCESS_EXECUTION_LOCAL_PARALLELISM=${cpus}" in steps[budget]["run"]
+    assert '>> "$GITHUB_ENV"' in steps[budget]["run"]

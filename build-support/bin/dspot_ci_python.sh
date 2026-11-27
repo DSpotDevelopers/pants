@@ -12,7 +12,9 @@ readonly RELEASE="20251014"
 readonly SHA256="493c477b4a88bb1ea2f6c6f57fa0e88ffbe55d9e7b1405c4699f2d41c04eb154"
 readonly URL="https://github.com/astral-sh/python-build-standalone/releases/download/${RELEASE}/cpython-${VERSION}+${RELEASE}-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz"
 root="${RUNNER_TOOL_CACHE:?}/dspot-python"
-install="${root}/${VERSION}-${SHA256}"
+# A new immutable generation: never rewrite metadata used by another running slot.
+metadata_sha256="$(sha256sum "$(dirname "${BASH_SOURCE[0]}")/dspot_relocate_python.py")"
+install="${root}/${VERSION}-${SHA256}-sysconfig-${metadata_sha256%% *}"
 mkdir -p "${root}"
 
 # Concurrent slots may share the tool cache. Publish only a completely extracted installation.
@@ -24,6 +26,7 @@ if [[ ! -x "${install}/bin/python3" ]]; then
   curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 "${URL}" --output "${staging}/python.tar.gz"
   echo "${SHA256}  ${staging}/python.tar.gz" | sha256sum --check --strict -
   tar --extract --gzip --file "${staging}/python.tar.gz" --directory "${staging}"
+  "${staging}/python/bin/python3" "$(dirname "${BASH_SOURCE[0]}")/dspot_relocate_python.py" "${staging}/python" "${install}"
   mv "${staging}/python" "${install}"
   rm -rf "${staging}"
   trap - EXIT
@@ -31,7 +34,7 @@ fi
 flock -u 9
 
 # Exercise the exact property needed by archive extraction: no inherited loader/Python env.
-env -i "${install}/bin/python3" -c 'import gzip, sys; assert sys.version_info[:3] == (3, 14, 0); print(sys.executable, sys.version)'
+env -i "${install}/bin/python3" -c 'import gzip, sys, sysconfig; from pathlib import Path; assert sys.version_info[:3] == (3, 14, 0); assert (Path(sysconfig.get_config_var("INCLUDEPY")) / "Python.h").is_file(); print(sys.executable, sys.version)'
 # Pants runs scripts through its dev-deps venv, not just the base interpreter.
 probe="$(mktemp -d "${RUNNER_TEMP:?}/dspot-python-check.XXXXXX")"
 trap 'rm -rf "${probe}"' EXIT
