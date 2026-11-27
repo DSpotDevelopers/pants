@@ -386,7 +386,7 @@ def _connect_service(
     deadline = time.time() + timeout_seconds
     while time.time() < deadline:
         _raise_if_required_services_exited(stack, required_services)
-        # The relay is an owned stack container. No runner-container network mutation or host port.
+        # The probe runs in the stack's own relay container, so the test job needs no host port and joins no network.
         args = [
             "exec",
             "-T",
