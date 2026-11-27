@@ -41,6 +41,8 @@ use store::{ImmutableInputs, Store};
 use task_executor::Executor;
 use workunit_store::{Metric, RunningWorkunit, in_workunit};
 
+use crate::container_cleanup::{create_sandbox_volume, remove_container};
+
 use process_execution::local::{
     CapturedWorkdir, CapturedWorkdirError, ChildOutput, KeepSandboxes, USER_EXECUTABLE_MODE,
     apply_chroot, collect_child_outputs, create_sandbox, prepare_workdir,
@@ -144,7 +146,7 @@ pub(crate) async fn remove_old_images(
                     Some(container_id) => {
                         log::debug!("Removing stale container {container_id}");
                         ContainerCache::remove_container(
-                            &docker, container_id.as_str(),
+                            &docker, container_id.as_str(), None,
                             Some(RemoveContainerOptions {
                                 force: true,
                                 ..RemoveContainerOptions::default()
@@ -542,8 +544,7 @@ impl process_execution::CommandRunner for CommandRunner<'_> {
                         (sandbox_path_in_container, working_dir)
                     };
                     // Prepare the workdir.
-                    // A separate daemon cannot follow local immutable-input links. Stage the complete
-                    // declared digest; named-cache links still refer to the container's cache volume.
+                    // Stage declared inputs: a separate daemon cannot follow local immutable-input links.
                     mreq.input_digests.inputs = mreq.input_digests.complete.clone();
                     mreq.input_digests.immutable_inputs.clear();
                     let exclusive_spawn = prepare_workdir(
@@ -864,10 +865,10 @@ impl Command {
     }
 }
 
-/// Container ID and NamedCaches for that container. async_oncecell::OnceCell is used so that
+/// Container ID, NamedCaches and owned disposable sandbox volume for that container. async_oncecell::OnceCell is used so that
 /// multiple tasks trying to access an initializing container do not try to start multiple
 /// containers.
-type CachedContainer = Arc<OnceCell<(String, NamedCaches)>>;
+type CachedContainer = Arc<OnceCell<(String, NamedCaches, String)>>;
 
 /// Caches running containers so that build actions can be invoked by running "executions"
 /// within those cached containers.
@@ -903,7 +904,7 @@ impl<'a> ContainerCache<'a> {
         image_pull_scope: ImagePullScope,
         image_pull_cache: ImagePullCache,
         labels: Option<HashMap<String, String>>,
-    ) -> Result<String, String> {
+    ) -> Result<(String, String), String> {
         // Pull the image.
         image_pull_cache
             .pull_image(
@@ -920,14 +921,7 @@ impl<'a> ContainerCache<'a> {
             .await
             .map_err(|e| format!("Failed to create named cache volume for {image_name}: {e}"))?;
 
-        let sandbox_volume = format!("pants-sandbox-{}", uuid::Uuid::new_v4());
-        docker
-            .create_volume(CreateVolumeOptions {
-                name: sandbox_volume.clone(),
-                ..CreateVolumeOptions::default()
-            })
-            .await
-            .map_err(|err| format!("Failed to create Docker sandbox volume: {err}"))?;
+        let sandbox_volume = create_sandbox_volume(&docker).await?;
 
         let config = bollard::container::Config {
             entrypoint: Some(vec!["/bin/sh".to_string()]),
@@ -968,6 +962,7 @@ impl<'a> ContainerCache<'a> {
             let _ = Self::remove_container(
                 &docker,
                 &container.id,
+                Some(&sandbox_volume),
                 Some(RemoveContainerOptions {
                     force: true,
                     ..RemoveContainerOptions::default()
@@ -985,7 +980,7 @@ impl<'a> ContainerCache<'a> {
             &container.id,
         );
 
-        Ok(container.id)
+        Ok((container.id, sandbox_volume))
     }
 
     /// Creates a volume for named caches for the given image name. In production usage, the image
@@ -1064,14 +1059,15 @@ impl<'a> ContainerCache<'a> {
         let maybe_arc = {
             self.containers
                 .lock()
-                .remove(&(image_name.to_string(), *platform))
+                .get(&(image_name.to_string(), *platform))
+                .cloned()
         };
-        if let Some(container_id) =
-            maybe_arc.and_then(|container_once_cell| container_once_cell.get().map(|t| t.0.clone()))
+        if let Some((container_id, _, sandbox_volume)) =
+            maybe_arc.as_ref().and_then(|cell| cell.get().cloned())
         {
             match self.docker.get().await.cloned() {
                 Ok(docker) => {
-                    tokio::spawn(async move {
+                    let cleaned = async move {
                         let check_state = async {
                             match docker.inspect_container(&container_id, None).await {
                                 Ok(ContainerInspectResponse {
@@ -1086,7 +1082,7 @@ impl<'a> ContainerCache<'a> {
                                 }) => Err(format!(
                                     "Cannot prune container {container_id} with status {status}"
                                 )),
-                                Ok(ContainerInspectResponse { state: Some(ContainerState { status: Some(_), .. }), .. }) => Self::remove_container(&docker, &container_id, None)
+                                Ok(ContainerInspectResponse { state: Some(ContainerState { status: Some(_), .. }), .. }) => Self::remove_container(&docker, &container_id, Some(&sandbox_volume), None)
                                     .await
                                     .map_err(|err| format!(
                                         "An error occurred when trying to remove container {container_id}\n\n{err}"
@@ -1100,7 +1096,7 @@ impl<'a> ContainerCache<'a> {
                                 Err(DockerError::DockerResponseServerError {
                                     status_code: 404,
                                     ..
-                                }) => Ok(()),
+                                }) => Self::remove_container(&docker, &container_id, Some(&sandbox_volume), None).await.map_err(|err| format!("Failed to remove missing container sandbox: {err}")),
                                 Err(err) => Err(format!(
                                     "Cannot prune container {container_id} because the following error occurred when trying to inspect container status:\n\n{err}"
                                 )),
@@ -1108,8 +1104,21 @@ impl<'a> ContainerCache<'a> {
                         };
                         if let Err(msg) = check_state.await {
                             log::warn!("{msg}");
+                            return false;
                         }
-                    });
+                        true
+                    }.await;
+                    if cleaned {
+                        let key = (image_name.to_string(), *platform);
+                        let mut containers = self.containers.lock();
+                        if containers
+                            .get(&key)
+                            .zip(maybe_arc.as_ref())
+                            .is_some_and(|(current, old)| Arc::ptr_eq(current, old))
+                        {
+                            containers.remove(&key);
+                        }
+                    }
                 }
                 Err(err) => {
                     log::warn!("Failed to remove container {container_id} due to error:\n\n{err}")
@@ -1145,7 +1154,7 @@ impl<'a> ContainerCache<'a> {
 
         let container_id = container_id_cell
             .get_or_try_init(async move {
-                let container_id = Self::make_container(
+                let (container_id, sandbox_volume) = Self::make_container(
                     docker.clone(),
                     executor,
                     image_name.to_string(),
@@ -1169,32 +1178,20 @@ impl<'a> ContainerCache<'a> {
                     })
                 };
 
-                Ok::<_, String>((container_id, named_caches))
+                Ok::<_, String>((container_id, named_caches, sandbox_volume))
             })
             .await?;
 
-        Ok(container_id.to_owned())
+        Ok((container_id.0.clone(), container_id.1.clone()))
     }
 
     pub(crate) async fn remove_container(
         docker: &Docker,
         container_id: &str,
+        owned_sandbox: Option<&str>,
         options: Option<RemoveContainerOptions>,
     ) -> Result<(), DockerError> {
-        let mounts = docker
-            .inspect_container(container_id, None)
-            .await?
-            .mounts
-            .unwrap_or_default();
-        docker.remove_container(container_id, options).await?;
-        for mount in mounts {
-            if mount.destination.as_deref() == Some(SANDBOX_BASE_PATH_IN_CONTAINER)
-                && let Some(name) = mount.name.filter(|name| name.starts_with("pants-sandbox-"))
-            {
-                docker.remove_volume(&name, None).await?;
-            }
-        }
-        Ok(())
+        remove_container(docker, container_id, owned_sandbox, options).await
     }
 
     pub async fn shutdown(&self) -> Result<(), String> {
@@ -1222,12 +1219,12 @@ impl<'a> ContainerCache<'a> {
             .cloned()
             .collect::<Vec<_>>();
 
-        let removal_futures = container_ids.into_iter().map(|(id, _)| async move {
+        let removal_futures = container_ids.into_iter().map(|(id, _, v)| async move {
             let remove_options = RemoveContainerOptions {
                 force: true,
                 ..RemoveContainerOptions::default()
             };
-            Self::remove_container(docker, id.as_str(), Some(remove_options))
+            Self::remove_container(docker, &id, Some(&v), Some(remove_options))
                 .await
                 .map_err(|err| {
                     format!("Failed to remove Docker container during shutdown `{id}`: {err:?}")
