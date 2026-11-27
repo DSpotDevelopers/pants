@@ -23,9 +23,12 @@ def steps_of_the_tests_job() -> list[dict]:
 
 def test_tests_job_runs_only_the_qualified_selection() -> None:
     (run,) = [s["run"] for s in steps_of_the_tests_job() if "./pants" in s.get("run", "")]
-    select = 'dspot_qualified_selection.py "$BASE" > "$RUNNER_TEMP/qualified.txt"'
+    # the cells outside the contract come out as pytest args Pants appends to the configured ones
+    outside = '"$RUNNER_TEMP/outside-the-contract.txt"'
+    select = f'dspot_qualified_selection.py "$BASE" {outside} > "$RUNNER_TEMP/qualified.txt"'
     assert select in run
-    assert './pants --spec-files="$RUNNER_TEMP/qualified.txt" lint test' in run
+    pants = './pants --spec-files="$RUNNER_TEMP/qualified.txt"'
+    assert f'{pants} --pytest-args="@$RUNNER_TEMP/outside-the-contract.txt" lint test' in run
 
 
 def test_tests_job_installs_upstreams_test_interpreters() -> None:
