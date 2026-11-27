@@ -40,7 +40,7 @@ from pants.core.environments.target_types import LocalWorkspaceEnvironmentTarget
 from pants.core.goals.test import TestResult, get_filtered_environment
 from pants.engine.environment import EnvironmentName
 from pants.engine.rules import QueryRule
-from pants.engine.target import Target
+from pants.engine.target import AllTargets, Target
 from pants.testutil.rule_runner import RuleRunner
 
 ATTEMPTS_DEFAULT_OPTION = 2
@@ -51,9 +51,8 @@ def package_manager(request) -> str:
     return cast(str, request.param)
 
 
-@pytest.fixture
-def rule_runner(package_manager: str) -> RuleRunner:
-    rule_runner = RuleRunner(
+def _new_rule_runner() -> RuleRunner:
+    return RuleRunner(
         rules=[
             *test.rules(),
             get_filtered_environment,
@@ -73,6 +72,15 @@ def rule_runner(package_manager: str) -> RuleRunner:
         ],
         objects=dict(package_json.build_file_aliases().objects),
     )
+
+
+@pytest.fixture(scope="module")
+def reusable_rule_runner() -> RuleRunner:
+    return _new_rule_runner()
+
+
+def _prepare_rule_runner(rule_runner: RuleRunner, package_manager: str) -> RuleRunner:
+    rule_runner = _new_rule_runner()
     rule_runner.set_options(
         [
             f"--nodejs-package-manager={package_manager}",
@@ -81,6 +89,32 @@ def rule_runner(package_manager: str) -> RuleRunner:
         env_inherit={"PATH"},
     )
     return rule_runner
+
+
+@pytest.fixture
+def rule_runner(package_manager: str, reusable_rule_runner: RuleRunner) -> RuleRunner:
+    return _prepare_rule_runner(reusable_rule_runner, package_manager)
+
+
+def test_reused_engine_starts_with_fresh_projects(reusable_rule_runner: RuleRunner) -> None:
+    first = _prepare_rule_runner(reusable_rule_runner, "npm")
+    first.write_files(
+        {
+            "jest_project/BUILD": "package_json()",
+            "jest_project/package.json": '{"name":"old","version":"1.0.0"}',
+            "mocha_project/stale.txt": "old source",
+        }
+    )
+    assert first.get_target(Address("jest_project", generated_name="old"))
+    engine = first.scheduler.scheduler
+    session = first.scheduler
+
+    second = _prepare_rule_runner(first, "pnpm")
+    assert second.scheduler.scheduler is engine
+    assert second.scheduler is not session
+    assert not Path(second.build_root, "jest_project").exists()
+    assert not Path(second.build_root, "mocha_project").exists()
+    assert not second.request(AllTargets, [])
 
 
 @pytest.fixture
