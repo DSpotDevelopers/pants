@@ -119,8 +119,12 @@ def test_MUST_FIRE_pants_runs_on_the_pinned_standalone_python_as_in_the_tests_jo
     steps = _job()["steps"]
     (python,) = _uses(_job(), "actions/setup-python@")
     assert "3.14" not in {_minor(v) for v in python["with"]["python-version"].split()}
-    installer = [i for i, s in enumerate(steps) if "build-support/bin/dspot_ci_python.sh" in s.get("run", "")]
-    assert installer == [steps.index(python) + 1], "the pinned installer runs right after setup-python"
+    installer = [
+        i for i, s in enumerate(steps) if "build-support/bin/dspot_ci_python.sh" in s.get("run", "")
+    ]
+    assert installer == [steps.index(python) + 1], (
+        "the pinned installer runs right after setup-python"
+    )
     assert "PY" not in _job().get("env", {}), "PY is the pinned install's, written by the installer"
     first_py = next(i for i, s in enumerate(steps) if '"$PY"' in s.get("run", ""))
     assert installer[0] < first_py
