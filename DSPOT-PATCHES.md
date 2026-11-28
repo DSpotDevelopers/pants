@@ -61,6 +61,10 @@ lookup and leading-slash wrapper filename do not provide a working root-project 
     from this branch; the script comes from the pull request's head), links them through zig's 2.28 stubs, and
     `dspot_glibc_floor.py` refuses the release when any native file of its wheel or PEX needs a newer glibc;
   - the artifacts' names follow the official ones, `pants.<version>-cp314-<platform>.pex`.
+- Qualifying a change: a pull request runs its change and its direct dependents (`dspot-pants.yaml`'s `tests`
+  job). `.github/workflows/dspot-pants-nightly.yaml` runs every suite of the qualified scope
+  (`build-support/bin/dspot_qualification_scope.toml`) once a day, and on a branch when dispatched. A change whose direct dependents are most of Pants (an edit to `src/python/pants/BUILD`) qualifies
+  on that run.
 
 ## Source for this build
 
