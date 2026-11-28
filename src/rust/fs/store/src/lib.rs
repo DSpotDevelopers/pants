@@ -4,6 +4,8 @@
 #![recursion_limit = "256"]
 
 mod immutable_inputs;
+#[cfg(test)]
+mod immutable_inputs_tests;
 pub use crate::immutable_inputs::{ImmutableInputs, WorkdirSymlink};
 mod snapshot;
 pub use crate::snapshot::{OneOffStoreFileByDigest, Snapshot, StoreFileByDigest};
