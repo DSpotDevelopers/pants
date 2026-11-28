@@ -6,7 +6,6 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
-import time
 
 import pytest
 
@@ -14,6 +13,7 @@ from pants.engine.fs import Digest, DigestContents
 from pants.engine.internals.buildbarn_integration_tests.stack import LocalBuildbarnStack
 from pants.engine.process import Process, ProcessResult
 from pants.engine.rules import QueryRule
+from pants.option.bootstrap_options import DEFAULT_EXECUTION_OPTIONS
 from pants.testutil.rule_runner import RuleRunner
 from pants.util.logging import LogLevel
 
@@ -67,8 +67,8 @@ def _run_process(
     result = rule_runner.request(ProcessResult, [process])
     contents = rule_runner.request(DigestContents, [result.output_digest])
 
-    # Wait for async cache writes to land before starting the next fresh runner.
-    time.sleep(1)
+    # Join the writes before starting a fresh store; sleeping does not establish completion.
+    rule_runner.scheduler.wait_for_tail_tasks(timeout=1)
     return (
         {file_content.path: file_content.content for file_content in contents},
         result.output_digest,
@@ -90,6 +90,7 @@ def test_buildbarn_remote_cache_roundtrips_file_and_directory_outputs() -> None:
         description="Create file and directory outputs",
         output_files=["file.txt"],
         output_directories=["out"],
+        remote_cache_speculation_delay_millis=DEFAULT_EXECUTION_OPTIONS.remote_cache_rpc_timeout_millis,
         level=LogLevel.INFO,
     )
 
@@ -102,6 +103,7 @@ def test_buildbarn_remote_cache_roundtrips_file_and_directory_outputs() -> None:
         assert contents1 == expected_contents
         assert metrics1["remote_cache_requests"] == 1
         assert metrics1["remote_cache_requests_uncached"] == 1
+        assert metrics1["remote_cache_write_successes"] == 1
         assert "backtrack_attempts" not in metrics1
 
         contents2, digest2, metrics2 = _run_process(
@@ -129,6 +131,7 @@ def test_buildbarn_remote_cache_roundtrips_root_output_directory() -> None:
         ],
         description="Create root output directory contents",
         output_directories=["."],
+        remote_cache_speculation_delay_millis=DEFAULT_EXECUTION_OPTIONS.remote_cache_rpc_timeout_millis,
         level=LogLevel.INFO,
     )
 
@@ -141,6 +144,7 @@ def test_buildbarn_remote_cache_roundtrips_root_output_directory() -> None:
         assert contents1 == expected_contents
         assert metrics1["remote_cache_requests"] == 1
         assert metrics1["remote_cache_requests_uncached"] == 1
+        assert metrics1["remote_cache_write_successes"] == 1
         assert "backtrack_attempts" not in metrics1
 
         contents2, digest2, metrics2 = _run_process(
