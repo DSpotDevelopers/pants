@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from dspot_qualified_selection import ALWAYS_LOADED, register_module, scope, selection
+from dspot_qualified_selection import ALWAYS_LOADED, register_module, scope, selection, whole
 
 # Environment kinds whose suites the guarded runners run: no job there owns a Docker host path, and
 # none reaches a remote execution service.
@@ -61,3 +61,23 @@ def test_the_scope_names_only_environments_the_runners_qualify() -> None:
     # A Docker or remote environment can't run on these runners: adding one to the scope (because
     # the company declared it) needs a runner for it first, never a skip.
     assert set(scope()["environment_targets"]) <= RUNNABLE_ENVIRONMENTS
+
+
+def test_the_whole_scope_is_every_target_within_the_qualified_scope() -> None:
+    # The nightly full run: every target Pants lists, within the same scope as a change's selection.
+    pants, calls = fake_pants(
+        loaded=["src/python/pants/backend/python/util_rules/pex.py"],
+        changed=[
+            "src/python/pants/engine/rules_test.py:tests",
+            "src/python/pants/backend/python/util_rules/pex_test.py",
+            "src/python/pants/backend/go/goals/test_test.py",
+        ],
+    )
+    assert whole(pants) == (
+        [
+            "src/python/pants/engine/rules_test.py:tests",
+            "src/python/pants/backend/python/util_rules/pex_test.py",
+        ],
+        ["src/python/pants/backend/go/goals/test_test.py"],
+    )
+    assert calls[-1] == ("list", "::")
