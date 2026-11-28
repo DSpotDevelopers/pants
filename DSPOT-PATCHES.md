@@ -4,7 +4,7 @@ This is official Pants **2.33.2** plus the reviewed fixes below. Every fix has a
 Upstream submission is optional and belongs only to the owner; it is not a build or approval gate.
 Apart from the version label and this file, nothing else differs from the `release_2.33.2` tag.
 
-Version: `2.33.2+dspot.13`. A repository pins it like any Pants version: `pants_version = "2.33.2+dspot.13"` in
+Version: `2.33.2+dspot.17`. A repository pins it like any Pants version: `pants_version = "2.33.2+dspot.17"` in
 `pants.toml`. The stock scie-pants launcher fetches it through `PANTS_BOOTSTRAP_URLS`, set in the repository's
 committed `.pants.bootstrap`. There's no wrapper script.
 
@@ -49,7 +49,7 @@ lookup and leading-slash wrapper filename do not provide a working root-project 
   immutable release (immutable releases were enabled on this fork after `+dspot.1` was published). `+dspot.3` adds
   patches 3 and 4; `+dspot.4` adds patch 5; `+dspot.5` adds patches 6 and 7; `+dspot.6` corrects them (#3: config
   discovery inventories sources and configs, never the installed resolve's links). `+dspot.7` adds patch 8
-  from the approved config-input and package/output-validation fix. `+dspot.8` adds patch 9; `+dspot.9` adds patch 10; `+dspot.10` adds patches 11 and 12. `+dspot.11` replaces patch 1 with upstream's merged #23754 (owner, 16 Nov: where Pants already has a way, we use theirs); patch 6 stays, as its row says why. `+dspot.12` adds patch 13; `+dspot.13` adds patch 14. Every release from `+dspot.2` on is
+  from the approved config-input and package/output-validation fix. `+dspot.8` adds patch 9; `+dspot.9` adds patch 10; `+dspot.10` adds patches 11 and 12. `+dspot.11` replaces patch 1 with upstream's merged #23754 (owner, 16 Nov: where Pants already has a way, we use theirs); patch 6 stays, as its row says why. `+dspot.12` adds patch 13; `+dspot.13` adds patch 14; `+dspot.14` adds patch 15; `+dspot.16` adds patch 17; `+dspot.17` adds patch 18 (#63, a digest subset never walks the links it does not match; #60, pnpm's package store linked into the TypeScript check's sandboxes). Every release from `+dspot.2` on is
   immutable: the launcher can't check the PEX's hash.
 - When a patch's upstream PR is released, the next build drops it and bumps the `+dspot.N` label. When none is left,
   repositories go back to the plain official version and this branch is retired.
