@@ -456,8 +456,10 @@ async def _select_tsconfig_programs(
             description=f"Discover TypeScript program in {path}",
             level=LogLevel.DEBUG,
         )
+        # tsc only reads its packages: their store is linked in, not written into each discovery's sandbox
         process = await prepare_tool_process(
-            replace(request, resolve=project_resolve.resolve_name), **implicitly()
+            replace(request, resolve=project_resolve.resolve_name, immutable_package_store=True),
+            **implicitly(),
         )
         # --showConfig enumerates filenames; it does not parse source contents. Supply
         # empty candidate files for this discovery only, without hydrating their blobs.
@@ -555,7 +557,7 @@ async def _prepare_tsc_build_process(
 
     # Uses the project's resolve as TypeScript execution requires project deps.
     tool_request_with_resolve: NodeJSToolRequest = replace(
-        tool_request, resolve=project_resolve.resolve_name
+        tool_request, resolve=project_resolve.resolve_name, immutable_package_store=True
     )
 
     process = await prepare_tool_process(tool_request_with_resolve, **implicitly())

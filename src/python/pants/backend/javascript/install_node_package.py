@@ -34,7 +34,7 @@ from pants.core.util_rules.source_files import (
     determine_source_files,
 )
 from pants.engine.internals.graph import transitive_targets
-from pants.engine.internals.native_engine import AddPrefix, Digest, MergeDigests
+from pants.engine.internals.native_engine import EMPTY_DIGEST, AddPrefix, Digest, MergeDigests
 from pants.engine.intrinsics import add_prefix, merge_digests
 from pants.engine.process import (
     Process,
@@ -56,6 +56,10 @@ class InstalledNodePackageRequest:
 class InstalledNodePackage:
     project_env: NodeJsProjectEnvironment
     digest: Digest
+    # The install's own node_modules directories and the package's files, which `digest` merges; both empty when the
+    # project is installed in the workspace, whose processes read its node_modules in place.
+    node_modules: Digest = EMPTY_DIGEST
+    package_files: Digest = EMPTY_DIGEST
 
     @property
     def project_dir(self) -> str:
@@ -174,6 +178,8 @@ async def install_node_packages_for_address(
                 ]
             )
         ),
+        node_modules=node_modules,
+        package_files=package_digest,
     )
 
 
