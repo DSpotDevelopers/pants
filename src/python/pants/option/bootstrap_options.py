@@ -1240,6 +1240,7 @@ class BootstrapOptions:
     )
     local_store_shard_count = IntOption(
         advanced=True,
+        daemon=True,
         help=softwrap(
             """
             The number of LMDB shards created for the local store. This setting also impacts
@@ -1258,6 +1259,7 @@ class BootstrapOptions:
     )
     local_store_processes_max_size_bytes = IntOption(
         advanced=True,
+        daemon=True,
         help=softwrap(
             """
             The maximum size in bytes of the local store containing process cache entries.
@@ -1268,6 +1270,7 @@ class BootstrapOptions:
     )
     local_store_files_max_size_bytes = IntOption(
         advanced=True,
+        daemon=True,
         help=softwrap(
             """
             The maximum size in bytes of the local store containing files.
@@ -1288,6 +1291,7 @@ class BootstrapOptions:
     )
     local_store_directories_max_size_bytes = IntOption(
         advanced=True,
+        daemon=True,
         help=softwrap(
             """
             The maximum size in bytes of the local store containing directories.
