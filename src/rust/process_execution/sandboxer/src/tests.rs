@@ -73,6 +73,44 @@ async fn test_sandboxer_service() {
 }
 
 #[tokio::test]
+async fn test_sandboxer_writes_a_read_only_directory_when_asked() {
+    // An immutable input (a tool's installed package store) is written by the sandboxer, read-only, so
+    // its files never pass through the Pants process; a sandbox stays writable.
+    let dir = TempDir::new().unwrap();
+    let dir_path = dir.path();
+    let (store_cli_opt, dir_digest) = prep_store(dir_path).await;
+    let socket_path = dir_path.join("sandboxer.sock");
+
+    let mut sandboxer_service = SandboxerService::new(socket_path.clone(), store_cli_opt, None);
+    tokio::spawn(async move { sandboxer_service.serve().await.unwrap() });
+    let mut client = SandboxerClient::connect_with_retries(&socket_path)
+        .await
+        .unwrap();
+
+    let digest = DirectoryDigest::from_persisted_digest(dir_digest.as_digest());
+    let immutable = dir_path.join("immutable");
+    let sandbox = dir_path.join("sandbox");
+    assert_eq!(
+        Ok(()),
+        client
+            .materialize_read_only_directory(&immutable, dir_path, &digest)
+            .await
+    );
+    assert_eq!(
+        Ok(()),
+        client
+            .materialize_directory(&sandbox, dir_path, &digest, &[])
+            .await
+    );
+    for (root, read_only) in [(immutable, true), (sandbox, false)] {
+        let file = root.join("subdir").join("greeting.txt");
+        assert_eq!("Hello, world!", fs::read_to_string(&file).unwrap());
+        let writable = fs::metadata(&file).unwrap().permissions().mode() & 0o222 != 0;
+        assert_eq!(!read_only, writable, "{root:?}: writable={writable}");
+    }
+}
+
+#[tokio::test]
 async fn test_each_sandboxer_of_one_process_has_its_own_socket() {
     // pantsd builds a new scheduler, and so a new Sandboxer, when its options change, in the same process: the old
     // Sandboxer's server runs until it is dropped, so the two must never share a socket path, or the new one's client

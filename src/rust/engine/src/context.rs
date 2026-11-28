@@ -680,7 +680,26 @@ impl Core {
             None
         };
 
-        let immutable_inputs = ImmutableInputs::new(store.clone(), &local_execution_root_dir)?;
+        // With a sandboxer, it also writes the immutable inputs (a tool's installed package store, linked into
+        // many sandboxes), as it writes sandboxes, so their files never pass through this process.
+        let materializer = sandboxer
+            .clone()
+            .map(|sandboxer| -> store::ImmutableMaterializer {
+                Arc::new(move |destination: PathBuf, root: PathBuf, digest| {
+                    let sandboxer = sandboxer.clone();
+                    async move {
+                        sandboxer
+                            .materialize_read_only_directory(&destination, &root, &digest)
+                            .await
+                    }
+                    .boxed()
+                })
+            });
+        let immutable_inputs = ImmutableInputs::new_with_materializer(
+            store.clone(),
+            &local_execution_root_dir,
+            materializer,
+        )?;
         let named_caches = NamedCaches::new_local(named_caches_dir);
         let command_runners = Self::make_command_runners(
             &full_store,
