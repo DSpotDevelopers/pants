@@ -1,7 +1,8 @@
 # Copyright 2026 Pants project contributors (see CONTRIBUTORS.md).
 # Licensed under the Apache License, Version 2.0 (see LICENSE).
 
-"""Prints the targets qualification runs: the change's selection, within the qualified scope.
+"""Prints the targets qualification runs: the change's selection, or with `--all` every target (the nightly full
+run), within the qualified scope.
 
 The scope (dspot_qualification_scope.toml) names the backends the company enables. A target under
 src/python/pants/backend/ is in scope when its directory holds code those backends load, with the
@@ -49,14 +50,25 @@ def in_scope(address: str, directories: set[str]) -> bool:
     return not address.startswith(BACKENDS) or directory(address) in directories
 
 
+def _split(pants: Pants, addresses: Callable[[], list[str]]) -> tuple[list[str], list[str]]:
+    directories = scope_directories(pants, scope()["backend_packages"])
+    listed = addresses()
+    return (
+        [a for a in listed if in_scope(a, directories)],
+        [a for a in listed if not in_scope(a, directories)],
+    )
+
+
 def selection(pants: Pants, base: str) -> tuple[list[str], list[str]]:
     """The change's selection, split into the qualified targets and those outside the scope."""
-    directories = scope_directories(pants, scope()["backend_packages"])
-    changed = pants(f"--changed-since={base}", "--changed-dependents=direct", "list")
-    return (
-        [a for a in changed if in_scope(a, directories)],
-        [a for a in changed if not in_scope(a, directories)],
+    return _split(
+        pants, lambda: pants(f"--changed-since={base}", "--changed-dependents=direct", "list")
     )
+
+
+def whole(pants: Pants) -> tuple[list[str], list[str]]:
+    """Every target, split the same way: what the nightly full run tests."""
+    return _split(pants, lambda: pants("list", "::"))
 
 
 def run_pants(*args: str) -> list[str]:
@@ -66,7 +78,7 @@ def run_pants(*args: str) -> list[str]:
 
 def main(argv: list[str]) -> int:
     (base,) = argv
-    qualified, outside = selection(run_pants, base)
+    qualified, outside = whole(run_pants) if base == "--all" else selection(run_pants, base)
     for address in outside:
         print(f"outside the qualified scope: {address}", file=sys.stderr)
     print("\n".join(qualified))

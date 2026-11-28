@@ -84,6 +84,40 @@ def test_discovery_does_not_snapshot_cyclic_installed_workspace_links() -> None:
     assert result.exit_code == 0, result.stdout + result.stderr
 
 
+def test_the_package_store_is_linked_into_each_typescript_process_not_written_into_it() -> None:
+    runner = _create_rule_runner("pnpm")
+    runner.write_files(_load_project_test_files("basic_project"))
+    target = runner.get_target(
+        Address("basic_project/src", target_name="ts_sources", relative_file_path="index.ts")
+    )
+    executions: list[Process] = []
+    execute = check.execute_process
+
+    async def capture_execution(process: Process, **kwargs: Any) -> FallibleProcessResult:
+        executions.append(process)
+        return await execute(process, **kwargs)
+
+    with patch.object(check, "execute_process", capture_execution):
+        results = runner.request(
+            CheckResults, [TypeScriptCheckRequest([TypeScriptCheckFieldSet.create(target)])]
+        )
+    store = "basic_project/node_modules/.pnpm"
+    assert [("--showConfig" in p.argv, "--build" in p.argv) for p in executions] == [
+        (True, False),
+        (False, True),
+    ]
+    for process in executions:
+        assert store in process.immutable_input_digests, process.description
+        written = runner.request(Snapshot, [process.input_digest]).files
+        assert not [path for path in written if path.startswith(store + "/")], process.description
+        linked = runner.request(Snapshot, [process.immutable_input_digests[store]]).files
+        assert any(path.endswith("/package.json") for path in linked), process.description
+    # tsc resolved react's types through the linked store
+    assert len(results.results) == 1
+    result = results.results[0]
+    assert result.exit_code == 0, result.stdout + result.stderr
+
+
 def test_compiler_digest_excludes_unrelated_declared_assets() -> None:
     runner = _create_rule_runner("pnpm")
     files = _load_project_test_files("basic_project")

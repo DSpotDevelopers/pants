@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+import dataclasses
+import os
 import re
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
@@ -27,8 +29,10 @@ from pants.backend.javascript.subsystems.nodejs import (
     NodeJSToolProcess,
     setup_node_tool_process,
 )
-from pants.engine.internals.native_engine import Digest, MergeDigests
-from pants.engine.intrinsics import merge_digests
+from pants.engine.fs import DigestSubset, PathGlobs
+from pants.engine.internals.native_engine import EMPTY_DIGEST, Digest, MergeDigests, RemovePrefix
+from pants.engine.internals.selectors import concurrently
+from pants.engine.intrinsics import digest_subset_to_digest, merge_digests, remove_prefix
 from pants.engine.process import Process
 from pants.engine.rules import Rule, collect_rules, implicitly, rule
 from pants.engine.unions import UnionRule
@@ -130,6 +134,10 @@ class NodeJSToolRequest:
     project_caches: FrozenDict[str, str] = field(default_factory=FrozenDict)
     timeout_seconds: int | None = None
     extra_env: Mapping[str, str] = field(default_factory=FrozenDict)
+    # Read the resolve's pnpm package store (node_modules/.pnpm) as an immutable input: materialized once per
+    # install and linked into each sandbox, instead of written into every sandbox again. For a tool that only reads
+    # its packages; one that writes under node_modules must keep its own copy.
+    immutable_package_store: bool = False
 
 
 async def _run_tool_without_resolve(request: NodeJSToolRequest, nodejs: NodeJS) -> Process:
@@ -188,11 +196,30 @@ async def _run_tool_with_resolve(request: NodeJSToolRequest, resolve: str) -> Pr
     installed = await install_node_packages_for_address(
         InstalledNodePackageRequest(package_for_resolve.address), **implicitly()
     )
-    merged_input_digest = await merge_digests(
-        MergeDigests([request.input_digest, installed.digest])
-    )
+    install_digest, package_store = installed.digest, {}
+    if (
+        request.immutable_package_store
+        and project.package_manager.name == "pnpm"
+        and installed.node_modules != EMPTY_DIGEST
+    ):
+        # pnpm's every other node_modules entry is a link into this store or to a workspace package, or a small file;
+        # they stay in the sandbox, so each still resolves through the sandbox as before.
+        # The store and everything else of the install, as two subsets of it: matched without following
+        # its links, which reach the workspace's packages and can be cyclic.
+        store = os.path.join(installed.project_dir, "node_modules", ".pnpm")
+        packages, rest = await concurrently(
+            digest_subset_to_digest(
+                DigestSubset(installed.node_modules, PathGlobs([f"{store}/**"]))
+            ),
+            digest_subset_to_digest(
+                DigestSubset(installed.node_modules, PathGlobs(["**", f"!{store}", f"!{store}/**"]))
+            ),
+        )
+        package_store = {store: await remove_prefix(RemovePrefix(packages, store))}
+        install_digest = await merge_digests(MergeDigests([installed.package_files, rest]))
+    merged_input_digest = await merge_digests(MergeDigests([request.input_digest, install_digest]))
 
-    return await setup_nodejs_project_environment_process(
+    process = await setup_nodejs_project_environment_process(
         NodeJsProjectEnvironmentProcess(
             env=installed.project_env,
             args=(*project.package_manager.execute_args, request.binary_name, *request.args),
@@ -206,6 +233,12 @@ async def _run_tool_with_resolve(request: NodeJSToolRequest, resolve: str) -> Pr
             extra_env=FrozenDict(request.extra_env),
         ),
         **implicitly(),
+    )
+    if not package_store:
+        return process
+    return dataclasses.replace(
+        process,
+        immutable_input_digests=FrozenDict({**process.immutable_input_digests, **package_store}),
     )
 
 

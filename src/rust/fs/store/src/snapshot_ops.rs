@@ -9,7 +9,7 @@ use std::iter::Iterator;
 use async_trait::async_trait;
 use bytes::BytesMut;
 use fs::{
-    DigestTrie, DirectoryDigest, EMPTY_DIRECTORY_DIGEST, GlobMatching, PreparedPathGlobs,
+    DigestTrie, DirectoryDigest, EMPTY_DIRECTORY_DIGEST, GlobMatching, PathStat, PreparedPathGlobs,
     RelativePath, SymlinkBehavior, directory,
 };
 use futures::future::{self, FutureExt};
@@ -226,14 +226,26 @@ pub trait SnapshotOps: Clone + Send + Sync + 'static {
             .await
             .map_err(|err| format!("Error matching globs against {directory_digest:?}: {err}"))?;
 
+        // The matched files' digests, looked up by their paths. The globs were matched without
+        // following links, so no matched path passes through one. A walk of the whole tree would
+        // follow every link in it, and re-enter a tree whose links form cycles (as pnpm's workspace
+        // links do) until the link-depth limit, whatever the globs match.
         let mut files = HashMap::new();
-        input_tree.walk(SymlinkBehavior::Oblivious, &mut |path, entry| match entry {
-            directory::Entry::File(f) => {
-                files.insert(path.to_owned(), f.digest());
+        for path_stat in &path_stats {
+            if let PathStat::File { path, .. } = path_stat {
+                match input_tree.entry(path)? {
+                    Some(directory::Entry::File(f)) => {
+                        files.insert(path.clone(), f.digest());
+                    }
+                    _ => {
+                        return Err(format!(
+                            "matched {path:?} is not a file of {directory_digest:?}"
+                        )
+                        .into());
+                    }
+                }
             }
-            directory::Entry::Symlink(_) => panic!("Unexpected symlink"),
-            directory::Entry::Directory(_) => (),
-        });
+        }
 
         Ok(
             DigestTrie::from_unique_paths(path_stats.iter().map(|p| p.into()).collect(), &files)?

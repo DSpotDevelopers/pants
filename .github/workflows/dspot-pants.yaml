@@ -142,6 +142,13 @@ jobs:
           if ! git diff --quiet "$BASE...HEAD" -- src/rust/process_execution/docker; then
             ./cargo test --locked --release -p docker volume_archive::
           fi
+      - name: Test changed store and sandboxer in Rust
+        env:
+          BASE: ${{ needs.source.outputs.base }}
+        run: |
+          if ! git diff --quiet "$BASE...HEAD" -- src/rust/fs/store src/rust/process_execution/sandboxer src/rust/sharded_lmdb; then
+            ./cargo test --locked --release -p store -p sandboxer -p sharded_lmdb
+          fi
       - name: Retain the matching native engine
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
