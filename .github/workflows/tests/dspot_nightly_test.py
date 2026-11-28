@@ -110,8 +110,20 @@ def test_it_installs_the_jdk_and_interpreters_the_whole_scope_needs() -> None:
     assert java["with"] == {"distribution": "adopt", "java-version": "11"}
     (python,) = _uses(_job(), "actions/setup-python@")
     versions = python["with"]["python-version"].split()
-    assert {"3.8", "3.9", "3.10", "3.11", "3.12", "3.13", "3.14"} <= {_minor(v) for v in versions}
-    assert _minor(versions[-1]) == "3.14", "3.14 stays the job's default python"
+    assert {"3.8", "3.9", "3.10", "3.11", "3.12", "3.13"} <= {_minor(v) for v in versions}
+
+
+def test_MUST_FIRE_pants_runs_on_the_pinned_standalone_python_as_in_the_tests_job() -> None:
+    # The tests job's default python is the pinned standalone install (build-support/bin/dspot_ci_python.sh writes PY and
+    # its bin to the job's environment); the nightly runs Pants on the same one, never setup-python's 3.14.
+    steps = _job()["steps"]
+    (python,) = _uses(_job(), "actions/setup-python@")
+    assert "3.14" not in {_minor(v) for v in python["with"]["python-version"].split()}
+    installer = [i for i, s in enumerate(steps) if "build-support/bin/dspot_ci_python.sh" in s.get("run", "")]
+    assert installer == [steps.index(python) + 1], "the pinned installer runs right after setup-python"
+    assert "PY" not in _job().get("env", {}), "PY is the pinned install's, written by the installer"
+    first_py = next(i for i, s in enumerate(steps) if '"$PY"' in s.get("run", ""))
+    assert installer[0] < first_py
 
 
 def test_MUST_FIRE_it_tests_every_target_of_the_qualified_scope_not_a_change() -> None:
