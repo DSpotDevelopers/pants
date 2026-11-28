@@ -123,6 +123,33 @@ async fn subset_symlink() {
 }
 
 #[tokio::test]
+async fn subset_never_walks_the_links_it_does_not_match() {
+    // Two folders that each link to the other twice, as pnpm's workspace packages do through
+    // their node_modules: a walk that follows links re-enters the pair until the link-depth
+    // limit, along a number of paths that grows like the Fibonacci numbers. A subset that
+    // matches neither folder must not walk them.
+    let (store, tempdir, fs, digester) = setup();
+    for folder in ["kept", "a", "b"] {
+        create_dir_all(tempdir.path().join(folder)).unwrap();
+    }
+    make_file(&tempdir.path().join("kept/file"), STR.as_bytes(), 0o600);
+    for (folder, other) in [("a", "b"), ("b", "a")] {
+        for link in ["first", "second"] {
+            symlink(format!("../{other}"), tempdir.path().join(folder).join(link)).unwrap();
+        }
+    }
+    let tree = Snapshot::from_path_stats(digester, expand_all_sorted(fs).await).await.unwrap();
+
+    let (_store2, tempdir2, fs2, digester2) = setup();
+    create_dir_all(tempdir2.path().join("kept")).unwrap();
+    make_file(&tempdir2.path().join("kept/file"), STR.as_bytes(), 0o600);
+    let kept = Snapshot::from_path_stats(digester2, expand_all_sorted(fs2).await).await.unwrap();
+
+    let subset = store.subset(tree.into(), make_subset_params(&["kept/**"])).await.unwrap();
+    assert_eq!(subset, kept.into());
+}
+
+#[tokio::test]
 async fn subset_recursive_wildcard() {
     let (store, tempdir, fs, digester) = setup();
 
