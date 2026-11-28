@@ -55,15 +55,26 @@ def missing_setup(nightly: dict, tests: dict) -> list[str]:
     for step in tests["steps"]:
         action = step.get("uses", "").split("@")[0]
         if action == "actions/setup-python":
-            have = {_minor(v) for s in _uses(nightly, "actions/setup-python@") for v in s["with"]["python-version"].split()}
-            missing += [f"python {_minor(v)}" for v in step["with"]["python-version"].split() if _minor(v) not in have]
+            have = {
+                _minor(v)
+                for s in _uses(nightly, "actions/setup-python@")
+                for v in s["with"]["python-version"].split()
+            }
+            missing += [
+                f"python {_minor(v)}"
+                for v in step["with"]["python-version"].split()
+                if _minor(v) not in have
+            ]
         elif action.startswith("actions/setup-") and not any(
-            s.get("uses", "").split("@")[0] == action and s.get("with") == step.get("with") for s in nightly["steps"]
+            s.get("uses", "").split("@")[0] == action and s.get("with") == step.get("with")
+            for s in nightly["steps"]
         ):
             missing.append(action)
         for word in step.get("run", "").split():
-            if word.startswith("build-support/bin/dspot_") and word.endswith(".sh") and not any(
-                word in s.get("run", "") for s in nightly["steps"]
+            if (
+                word.startswith("build-support/bin/dspot_")
+                and word.endswith(".sh")
+                and not any(word in s.get("run", "") for s in nightly["steps"])
             ):
                 missing.append(word)
     return missing
@@ -74,13 +85,22 @@ def test_it_installs_at_least_what_the_tests_job_installs() -> None:
 
 
 def test_MUST_FIRE_a_tests_job_installer_the_nightly_lacks_is_named() -> None:
-    tests = {"steps": [
-        {"uses": "actions/setup-java@0", "with": {"distribution": "adopt", "java-version": "11"}},
-        {"uses": "actions/setup-python@0", "with": {"python-version": "3.8\n3.99"}},
-        {"run": "build-support/bin/dspot_ci_python.sh"},
-    ]}
+    tests = {
+        "steps": [
+            {
+                "uses": "actions/setup-java@0",
+                "with": {"distribution": "adopt", "java-version": "11"},
+            },
+            {"uses": "actions/setup-python@0", "with": {"python-version": "3.8\n3.99"}},
+            {"run": "build-support/bin/dspot_ci_python.sh"},
+        ]
+    }
     nightly = {"steps": [{"uses": "actions/setup-python@1", "with": {"python-version": "3.8.18"}}]}
-    assert missing_setup(nightly, tests) == ["actions/setup-java", "python 3.99", "build-support/bin/dspot_ci_python.sh"]
+    assert missing_setup(nightly, tests) == [
+        "actions/setup-java",
+        "python 3.99",
+        "build-support/bin/dspot_ci_python.sh",
+    ]
 
 
 def test_it_installs_the_jdk_and_interpreters_the_whole_scope_needs() -> None:

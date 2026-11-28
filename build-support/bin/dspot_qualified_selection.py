@@ -61,7 +61,9 @@ def _split(pants: Pants, addresses: Callable[[], list[str]]) -> tuple[list[str],
 
 def selection(pants: Pants, base: str) -> tuple[list[str], list[str]]:
     """The change's selection, split into the qualified targets and those outside the scope."""
-    return _split(pants, lambda: pants(f"--changed-since={base}", "--changed-dependents=direct", "list"))
+    return _split(
+        pants, lambda: pants(f"--changed-since={base}", "--changed-dependents=direct", "list")
+    )
 
 
 def whole(pants: Pants) -> tuple[list[str], list[str]]:
