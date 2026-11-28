@@ -85,12 +85,34 @@ jobs:
               target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
             });
 
-  build:
+  python-bootstrap:
     needs: source
-    runs-on: [self-hosted, linux, x64, dspot]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner-class: heavy-ok
+            runner-labels: [self-hosted, linux, x64, dspot, heavy-ok]
+          - runner-class: slot-medium
+            runner-labels: [self-hosted, linux, x64, slot-medium]
+    runs-on: ${{ matrix.runner-labels }}
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ needs.source.outputs.head }}
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Prove the interpreter and its venv without the job's loader environment
+        run: build-support/bin/dspot_ci_python.sh
+
+  build:
+    needs: [source, python-bootstrap]
+    # Use the fleet's heavy-job eligibility, as dspot-company-data's heavy jobs do.
+    # This is independent of the guarded Docker capability required by the test job below.
+    runs-on: [self-hosted, linux, x64, dspot, heavy-ok]
     timeout-minutes: 90
     env:
-      PY: python3.14
       CARGO_BUILD_JOBS: '1'
       PANTS_PANTSD: 'false'
       PANTS_PROCESS_EXECUTION_LOCAL_PARALLELISM: '1'
@@ -104,9 +126,8 @@ jobs:
           ref: ${{ needs.source.outputs.head }}
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
-        with:
-          python-version: '3.14'
+      - name: Install the pinned standalone Python
+        run: build-support/bin/dspot_ci_python.sh
       - name: Install the source's Rust toolchain
         run: |
           curl --fail --silent --show-error --proto '=https' --tlsv1.2 https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none
@@ -178,14 +199,14 @@ jobs:
 
   tests:
     needs: [source, build]
-    # The native Docker and Buildbarn cells need the admitted socket and Compose runner image.
-    # Generic dspot slots may lack Compose (run 46059177480 on 06f9).
+    # The build's runner class: the focused suites run up to 6 minutes each (a JavaScript integration suite 202 s of
+    # its 240 s limit), and a 1-vCPU medium slot shared with other jobs ran past them (runs 45668070356, 45711444202).
+    # The native Docker and Buildbarn cells need the admitted socket and Compose runner image; heavy-ok alone does not
+    # provide them, and generic dspot slots may lack Compose (run 46059177480 on 06f9).
     runs-on: [self-hosted, linux, x64, dspot, heavy-ok, docker-socket]
     timeout-minutes: 30
     env:
-      PY: python3.14
       PANTS_PANTSD: 'false'
-      PANTS_PROCESS_EXECUTION_LOCAL_PARALLELISM: '1'
       HONEYCOMB_API_KEY: --DISABLED--
       PANTS_OPENTELEMETRY_ENABLED: 'False'
     steps:
@@ -211,24 +232,45 @@ jobs:
           done
           fetch --unshallow
           git merge-base "$BASE" "$head" > /dev/null
-      # The interpreters the focused suites run under, as upstream's own test jobs install them
-      # (pants_release/generate_github_workflows.py, install_pythons): the runner image carries none
-      # of them. 3.14 is listed last, so it stays the job's default python.
+      # The tools and interpreters the qualified suites run under, as upstream's own test jobs install
+      # them (pants_release/generate_github_workflows.py, test_jobs): the runner image carries none of
+      # them, and a suite whose tool is missing skips, which this fork counts as a failure. Go and
+      # thrift serve only backends outside the qualified scope. The JDK serves pants/jvm and pants/bsp.
+      - name: Install AdoptJDK
+        uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
+        with:
+          distribution: adopt
+          java-version: '11'
+      # Upstream's Linux list without 3.7, which setup-python doesn't publish for the runners' Ubuntu
+      # 24.04, and 3.14, the standalone interpreter installed immediately afterwards for Pants itself.
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: |
-            3.8.18
-            3.10.22
-            3.11.18
+            3.8
+            3.9
+            3.10
+            3.11
+            3.12
             3.13
-            3.14
+      - name: Install the pinned standalone Python
+        run: build-support/bin/dspot_ci_python.sh
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: native-${{ needs.source.outputs.head }}
           path: src/python/pants
       - name: Restore executable permissions
         run: chmod +x src/python/pants/bin/native_client src/python/pants/bin/sandboxer src/python/pants/bin/pants_lock
-      - name: Run only the patch and its direct dependent suites
+      # Use the granted slot CPUs, bounded by cgroup quota, affinity and the fleet share.
+      # A fixed one-process queue made short suites wait behind the entire qualification.
+      - name: Pants' processes, one per CPU the slot is granted
+        run: |
+          set -euo pipefail
+          cpus="$("$PY" build-support/bin/dspot_slot_cpus.py)"
+          echo "PANTS_PROCESS_EXECUTION_LOCAL_PARALLELISM=${cpus}" >> "$GITHUB_ENV"
+          echo "Pants' process parallelism: ${cpus}"
+      # The patch and its direct dependents, within the qualified scope: the backends the company
+      # enables (build-support/bin/dspot_qualification_scope.toml).
+      - name: Run only the patch and its direct dependent suites, within the qualified scope
         env:
           BASE: ${{ needs.source.outputs.base }}
           EXPECTED_HEAD: ${{ needs.source.outputs.head }}
@@ -239,8 +281,9 @@ jobs:
             ["--deselect=src/python/pants/backend/python/providers/python_build_standalone/rules_test.py::test_docker_python_path_uses_named_caches_in_container"]
         run: |
           test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          "$PY" build-support/bin/dspot_qualified_selection.py "$BASE" > "$RUNNER_TEMP/qualified.txt"
           TIMEFORMAT='tests elapsed=%R user=%U system=%S seconds'
-          time ./pants --changed-since="$BASE" --changed-dependents=direct lint test
+          time ./pants --spec-files="$RUNNER_TEMP/qualified.txt" lint test
       - name: Report test memory
         if: always()
         run: |
