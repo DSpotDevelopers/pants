@@ -251,7 +251,11 @@ impl SandboxerGrpcImpl {
                 dir_digest,
                 false,
                 &mutable_paths,
-                Permissions::Writable,
+                if r.read_only {
+                    Permissions::ReadOnly
+                } else {
+                    Permissions::Writable
+                },
             )
             .await
             .map_err(|e| e.to_string())?;
@@ -336,6 +340,35 @@ impl SandboxerClient {
         dir_digest: &DirectoryDigest,
         mutable_paths: &[String],
     ) -> Result<(), String> {
+        self.request_materialize(
+            destination,
+            destination_root,
+            dir_digest,
+            mutable_paths,
+            false,
+        )
+        .await
+    }
+
+    /// Writes the directory read-only: an immutable input, linked into many sandboxes.
+    pub async fn materialize_read_only_directory(
+        &mut self,
+        destination: &Path,
+        destination_root: &Path,
+        dir_digest: &DirectoryDigest,
+    ) -> Result<(), String> {
+        self.request_materialize(destination, destination_root, dir_digest, &[], true)
+            .await
+    }
+
+    async fn request_materialize(
+        &mut self,
+        destination: &Path,
+        destination_root: &Path,
+        dir_digest: &DirectoryDigest,
+        mutable_paths: &[String],
+        read_only: bool,
+    ) -> Result<(), String> {
         let request = tonic::Request::new(MaterializeDirectoryRequest {
             destination: destination
                 .to_str()
@@ -353,6 +386,7 @@ impl SandboxerClient {
                 .to_string(),
             digest: Some(dir_digest.as_digest().into()),
             mutable_paths: mutable_paths.to_vec(),
+            read_only,
         });
 
         self.grpc_client
@@ -571,10 +605,46 @@ impl Sandboxer {
                     .ok_or_else(|| format!("Path is not valid string: {rp:?}"))
             })
             .collect::<Result<Vec<_>, _>>()?;
+        self.materialize(
+            destination,
+            destination_root,
+            dir_digest,
+            &mutable_paths,
+            false,
+        )
+        .await
+    }
+
+    /// Writes the directory read-only, in the sandboxer process: an immutable input (a tool's installed
+    /// package store) linked into many sandboxes, whose files then never pass through this process.
+    pub async fn materialize_read_only_directory(
+        &self,
+        destination: &Path,
+        destination_root: &Path,
+        dir_digest: &DirectoryDigest,
+    ) -> Result<(), String> {
+        self.materialize(destination, destination_root, dir_digest, &[], true)
+            .await
+    }
+
+    async fn materialize(
+        &self,
+        destination: &Path,
+        destination_root: &Path,
+        dir_digest: &DirectoryDigest,
+        mutable_paths: &[String],
+        read_only: bool,
+    ) -> Result<(), String> {
         let ret = self
             .client()
             .await?
-            .materialize_directory(destination, destination_root, dir_digest, &mutable_paths)
+            .request_materialize(
+                destination,
+                destination_root,
+                dir_digest,
+                mutable_paths,
+                read_only,
+            )
             .await;
         if ret.is_err() {
             // The server might be down for some reason (e.g., it has not been initially started
@@ -584,7 +654,13 @@ impl Sandboxer {
             return self
                 .client()
                 .await?
-                .materialize_directory(destination, destination_root, dir_digest, &mutable_paths)
+                .request_materialize(
+                    destination,
+                    destination_root,
+                    dir_digest,
+                    mutable_paths,
+                    read_only,
+                )
                 .await;
         }
         ret

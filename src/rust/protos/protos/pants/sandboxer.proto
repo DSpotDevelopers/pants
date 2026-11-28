@@ -24,6 +24,9 @@ message MaterializeDirectoryRequest {
 
   // Paths listed here will not be hardlinked.
   repeated string mutable_paths = 4;
+
+  // Write the files read-only: an immutable input, linked into many sandboxes, rather than a sandbox.
+  bool read_only = 5;
 }
 
 message MaterializeDirectoryResponse {

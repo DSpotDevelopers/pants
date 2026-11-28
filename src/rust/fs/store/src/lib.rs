@@ -6,7 +6,7 @@
 mod immutable_inputs;
 #[cfg(test)]
 mod immutable_inputs_tests;
-pub use crate::immutable_inputs::{ImmutableInputs, WorkdirSymlink};
+pub use crate::immutable_inputs::{ImmutableInputs, ImmutableMaterializer, WorkdirSymlink};
 mod snapshot;
 pub use crate::snapshot::{OneOffStoreFileByDigest, Snapshot, StoreFileByDigest};
 mod snapshot_ops;
