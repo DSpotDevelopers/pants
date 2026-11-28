@@ -31,6 +31,12 @@ from pants.core.goals.package import (
 )
 from pants.core.subsystems.debug_adapter import DebugAdapterSubsystem
 from pants.core.target_types import GenericTarget
+from pants.core.util_rules.adhoc_process_support import (
+    ToolRunnerRequest,
+    create_tool_runner,
+    prepare_env_vars,
+)
+from pants.core.util_rules.adhoc_process_support import rules as adhoc_process_support_rules
 from pants.core.util_rules.distdir import DistDir
 from pants.core.util_rules.env_vars import environment_vars_subset
 from pants.core.util_rules.partitions import (
@@ -41,7 +47,8 @@ from pants.core.util_rules.partitions import (
     _PartitionFieldSetsRequestBase,
 )
 from pants.core.util_rules.sharding import timed_shards
-from pants.engine.addresses import Address
+from pants.core.util_rules.source_files import SourceFilesRequest, determine_source_files
+from pants.engine.addresses import Address, Addresses
 from pants.engine.collection import Collection
 from pants.engine.console import Console
 from pants.engine.desktop import OpenFilesRequest, find_open_program
@@ -52,15 +59,21 @@ from pants.engine.goal import Goal, GoalSubsystem
 from pants.engine.internals.graph import find_valid_field_sets, resolve_targets, transitive_targets
 from pants.engine.internals.session import RunId
 from pants.engine.internals.specs_rules import find_valid_field_sets_for_target_roots
-from pants.engine.intrinsics import merge_digests, run_interactive_process_in_environment
+from pants.engine.intrinsics import (
+    execute_process,
+    merge_digests,
+    run_interactive_process_in_environment,
+)
 from pants.engine.process import (
     FallibleProcessResult,
     InteractiveProcess,
+    Process,
     ProcessCacheScope,
     ProcessResultMetadata,
 )
 from pants.engine.rules import collect_rules, concurrently, goal_rule, implicitly, rule
 from pants.engine.target import (
+    AlwaysTraverseDeps,
     Dependencies,
     DepsTraversalBehavior,
     FieldSet,
@@ -91,6 +104,7 @@ from pants.option.option_types import (
 from pants.util.collections import partition_sequentially
 from pants.util.dirutil import safe_open
 from pants.util.docutil import bin_name
+from pants.util.frozendict import FrozenDict
 from pants.util.logging import LogLevel
 from pants.util.memo import memoized, memoized_property
 from pants.util.meta import classproperty
@@ -654,6 +668,27 @@ class TestSubsystem(GoalSubsystem):
             """
         ),
     )
+    preflight = StrOption(
+        default=None,
+        advanced=True,
+        help=softwrap(
+            """
+            The address of a runnable target (any target the `run` goal can run, such as a
+            `system_binary` or a `pex_binary`) to run before each selected test batch, in a sandbox
+            holding the batch's declared source closure: the sources of its targets and of every
+            target they depend on, `execution_dependencies` included.
+
+            The runnable gets `[test].preflight_args`, then the path of every file in that closure,
+            as its arguments; `PANTS_TEST_PREFLIGHT_TARGETS` names the batch's targets. A nonzero
+            exit fails the batch with the preflight's output, and its test process never starts,
+            whatever the test target's kind. Unset (the default), no preflight runs.
+            """
+        ),
+    )
+    preflight_args = StrListOption(
+        advanced=True,
+        help="Arguments given to `[test].preflight`, before the declared source paths.",
+    )
     shard_timings = DictOption[float](
         default={},
         fromfile=True,
@@ -978,6 +1013,86 @@ def _save_test_result_info_report_file(run_id: RunId, results: dict[str, dict]) 
         fh.write(obj)
 
 
+@dataclass(frozen=True)
+class TestPreflightRequest:
+    batch: TestRequest.Batch
+
+    # Prevent this class from being detected by pytest as a test class.
+    __test__ = False
+
+
+@dataclass(frozen=True)
+class TestPreflightResult:
+    """A refused batch's result (`refusal`), or None when the preflight admits the batch or none is set."""
+
+    refusal: TestResult | None
+
+    # Prevent this class from being detected by pytest as a test class.
+    __test__ = False
+
+
+@rule(desc="Check a test batch's declared inputs", level=LogLevel.DEBUG)
+async def run_test_preflight(
+    request: TestPreflightRequest, test_subsystem: TestSubsystem
+) -> TestPreflightResult:
+    if not test_subsystem.preflight:
+        return TestPreflightResult(None)
+    batch = request.batch
+    addresses = Addresses(field_set.address for field_set in batch.elements)
+    targets, closure = await concurrently(
+        resolve_targets(**implicitly({addresses: Addresses})),
+        transitive_targets(
+            TransitiveTargetsRequest(
+                addresses, should_traverse_deps_predicate=AlwaysTraverseDeps()
+            ),
+            **implicitly(),
+        ),
+    )
+    sources = await determine_source_files(
+        SourceFilesRequest(
+            (tgt.get(SourcesField) for tgt in closure.closure if tgt.has_field(SourcesField)),
+            for_sources_types=(SourcesField,),
+        )
+    )
+    tool_runner = await create_tool_runner(
+        ToolRunnerRequest(
+            runnable_address_str=test_subsystem.preflight,
+            args=tuple(test_subsystem.preflight_args),
+            execution_dependencies=(),
+            runnable_dependencies=(),
+            target=targets[0],
+            runnable_address_field_alias="[test].preflight",
+        )
+    )
+    input_digest = await merge_digests(MergeDigests((tool_runner.digest, sources.snapshot.digest)))
+    env = await prepare_env_vars(
+        {
+            **tool_runner.extra_env,
+            "PANTS_TEST_PREFLIGHT_TARGETS": " ".join(address.spec for address in addresses),
+        },
+        (),
+        extra_paths=tool_runner.extra_paths,
+        description_of_origin="the `[test].preflight` option",
+    )
+    result = await execute_process(
+        Process(
+            argv=(*tool_runner.args, *sources.snapshot.files),
+            input_digest=input_digest,
+            immutable_input_digests=FrozenDict(tool_runner.immutable_input_digests),
+            append_only_caches=FrozenDict(tool_runner.append_only_caches),
+            env=env,
+            description=f"Preflight of {batch.description}",
+            level=LogLevel.DEBUG,
+        ),
+        **implicitly(),
+    )
+    if result.exit_code == 0:
+        return TestPreflightResult(None)
+    return TestPreflightResult(
+        TestResult.from_batched_fallible_process_result((result,), batch, test_subsystem.output)
+    )
+
+
 @goal_rule
 async def run_tests(
     console: Console,
@@ -1036,13 +1151,36 @@ async def run_tests(
         for batch in test_batches
     )
 
+    # The preflight (`[test].preflight`) judges each batch's declared inputs before its test process may start, the
+    # same for every kind of test target.
+    preflights = await concurrently(
+        run_test_preflight(
+            **implicitly(
+                {
+                    TestPreflightRequest(batch): TestPreflightRequest,
+                    environment_name: EnvironmentName,
+                }
+            )
+        )
+        for batch, environment_name in zip(test_batches, environment_names)
+    )
+    refused = [preflight.refusal for preflight in preflights if preflight.refusal is not None]
+
     if test_subsystem.debug or test_subsystem.debug_adapter:
+        if refused:
+            for refusal in refused:
+                console.print_stderr(refusal.message())
+            return Test(refused[0].exit_code or 1)
         return await _run_debug_tests(
             test_batches, environment_names, test_subsystem, debug_adapter
         )
 
-    to_test = list(zip(test_batches, environment_names))
-    results = await concurrently(
+    to_test = [
+        (batch, environment_name)
+        for batch, environment_name, preflight in zip(test_batches, environment_names, preflights)
+        if preflight.refusal is None
+    ]
+    executed_results = await concurrently(
         run_test_batch(
             **implicitly(
                 {
@@ -1053,10 +1191,11 @@ async def run_tests(
         )
         for batch, environment_name in to_test
     )
+    results = [*refused, *executed_results]
 
     if test_subsystem.shard_timings_output:
         timings: dict[str, float] = {}
-        for result in results:
+        for result in executed_results:
             elapsed = result.result_metadata.total_elapsed_ms if result.result_metadata else None
             if elapsed is None or not result.addresses:
                 continue
@@ -1361,4 +1500,6 @@ async def build_runtime_package_dependencies(
 def rules():
     return [
         *collect_rules(),
+        # the preflight's runnable is run through the ad hoc tool runner, whose rules every backend can then rely on
+        *adhoc_process_support_rules(),
     ]

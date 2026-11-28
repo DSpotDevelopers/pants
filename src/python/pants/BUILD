@@ -43,7 +43,7 @@ python_distribution(
     # We need to explicitly control the wheel tagging, rather than following whatever the current
     # Python interpreter is tagged for (especially on macOS, where a 'universal' interpreter build
     # can lead to single-platform wheels being tagged as `universal2` wheels, incorrectly)
-    env_vars=["_PYTHON_HOST_PLATFORM"],
+    env_vars=["_PYTHON_HOST_PLATFORM", "CC", "LDSHARED"],
 )
 
 pex_binary(

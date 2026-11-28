@@ -18,6 +18,7 @@ from pants.backend.python.goals import package_pex_binary
 from pants.backend.python.target_types import PexBinary, PythonSourcesGeneratorTarget
 from pants.backend.python.target_types_rules import rules as python_target_type_rules
 from pants.backend.python.util_rules import pex_from_targets
+from pants.core import register as core_register
 from pants.core.environments.rules import ChosenLocalEnvironmentName
 from pants.core.goals.test import (
     BuildPackageDependenciesRequest,
@@ -31,6 +32,7 @@ from pants.core.goals.test import (
     Test,
     TestDebugRequest,
     TestFieldSet,
+    TestPreflightResult,
     TestRequest,
     TestResult,
     TestSubsystem,
@@ -69,7 +71,7 @@ from pants.option.option_types import SkipOption
 from pants.option.subsystem import Subsystem
 from pants.testutil.option_util import create_goal_subsystem, create_subsystem
 from pants.testutil.python_rule_runner import PythonRuleRunner
-from pants.testutil.rule_runner import QueryRule, mock_console, run_rule_with_mocks
+from pants.testutil.rule_runner import QueryRule, RuleRunner, mock_console, run_rule_with_mocks
 from pants.util.logging import LogLevel
 
 
@@ -265,6 +267,7 @@ def run_test_rule(
     shard: str = "",
     shard_timings: dict[str, float] | None = None,
     shard_timings_output: str | None = None,
+    preflight_refusal: TestResult | None = None,
 ) -> tuple[int, str]:
     test_subsystem = create_goal_subsystem(
         TestSubsystem,
@@ -353,6 +356,9 @@ def run_test_rule(
                 "pants.core.goals.test.test_batch_to_debug_request": mock_debug_request,
                 "pants.core.goals.test.test_batch_to_debug_adapter_request": mock_debug_request,
                 "pants.core.goals.test.run_test_batch": mock_test_partition,
+                # Ordinary goal cells admit every batch; refusal cells retain their normal result.
+                "pants.core.goals.test.run_test_preflight": lambda _request,
+                _subsystem: TestPreflightResult(preflight_refusal),
                 "pants.core.goals.test.create_coverage_report": mock_coverage_report_generation,
                 "pants.engine.internals.specs_rules.find_valid_field_sets_for_target_roots": mock_find_valid_field_sets,
                 "pants.engine.intrinsics.merge_digests": lambda _: EMPTY_DIGEST,
@@ -406,6 +412,27 @@ def test_duration_report_uses_process_time(rule_runner: PythonRuleRunner, tmp_pa
     )
     assert code == 0
     assert json.loads(output.read_text()) == {"//:example": 0.999}
+
+
+def test_refused_preflight_does_not_replace_batch_timings(
+    rule_runner: PythonRuleRunner, tmp_path: Path
+) -> None:
+    import json
+
+    target = make_target()
+    output = tmp_path / "durations.json"
+    refusal = make_test_result(
+        (target.address,), 3, result_metadata=make_process_result_metadata("ran")
+    )
+    code, _ = run_test_rule(
+        rule_runner,
+        request_type=SuccessfulRequest,
+        targets=[target],
+        preflight_refusal=refusal,
+        shard_timings_output=str(output),
+    )
+    assert code == 3
+    assert json.loads(output.read_text()) == {}
 
 
 def test_skipped_target_noops(rule_runner: PythonRuleRunner) -> None:
@@ -863,3 +890,9 @@ def test_non_utf8_output() -> None:
         output_setting=ShowOutput.ALL,
     )
     assert test_result.message() == "failed (exit code 1).\n��\n��\n\n"
+
+
+def test_the_core_test_goal_needs_no_backend_for_its_preflight() -> None:
+    # the preflight runs its runnable through the ad hoc tool runner: the core rules alone (the bootstrap scheduler
+    # loads no other backend) must still form a valid rule graph
+    RuleRunner(rules=[*core_register.rules()], target_types=core_register.target_types())

@@ -84,6 +84,15 @@ def test_it_installs_at_least_what_the_tests_job_installs() -> None:
     assert missing_setup(_job(), _load(PR_RUN)["jobs"]["tests"]) == []
 
 
+def test_it_bootstraps_the_same_python_for_clean_subprocesses() -> None:
+    def bootstrap(job: dict) -> list[dict]:
+        return [s for s in job["steps"] if "dspot_bootstrap_python.sh" in s.get("run", "")]
+
+    expected = bootstrap(_load(PR_RUN)["jobs"]["tests"])
+    assert len(expected) == 1
+    assert bootstrap(_job()) == expected
+
+
 def test_MUST_FIRE_a_tests_job_installer_the_nightly_lacks_is_named() -> None:
     tests = {
         "steps": [

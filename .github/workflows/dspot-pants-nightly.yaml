@@ -60,6 +60,11 @@ jobs:
             3.12
             3.13
             3.14
+      - name: Bootstrap Python for clean Pants subprocesses
+        run: |
+          bootstrap_python="$(bash build-support/bin/dspot_bootstrap_python.sh)"
+          echo "PY=${bootstrap_python}" >> "$GITHUB_ENV"
+          dirname "${bootstrap_python}" >> "$GITHUB_PATH"
       # `./pants` builds the native engine from this source, as the build job's toolchain does.
       - name: Install the source's Rust toolchain
         run: |
